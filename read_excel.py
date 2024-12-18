@@ -136,11 +136,7 @@ def find_header_row(df):
 
 def identify_bank(df):
     """Identify the bank based on the content of the DataFrame"""
-    print("Checking bank identification...")
-    print(f"First row: {df.iloc[0].tolist()}")
-    
     if 'Logotipo Itaú' in df.columns:
-        print("Found Itaú logo")
         return 'Itau'
     return None
 
@@ -157,10 +153,12 @@ def process_excel_file(file):
             print("Identified as Itaú format")
             
             # Skip 8 rows and read again with specific column names
-            df = pd.read_excel(file, skiprows=8)
+            df = pd.read_excel(file, skiprows=8, header=None)
             print(f"Columns after skiprows: {df.columns.tolist()}")
             
             # Set column names based on known Itaú format
+            df.columns = df.iloc[0]
+            df = df[1:]
             df.columns = ['Data', 'Histórico', 'Documento', 'Valor', 'Saldo']
             print(f"Columns after setting names: {df.columns.tolist()}")
             print(f"First few rows:\n{df.head()}")
