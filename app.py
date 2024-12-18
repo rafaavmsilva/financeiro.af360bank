@@ -267,9 +267,30 @@ def process_file_with_progress(filepath, process_id):
         # Identify the bank and adjust reading logic
         bank = identify_bank(df)
         if bank == 'Itau':
-            df = pd.read_excel(filepath, skiprows=8)  # Skip the first 8 rows for Itaú extratos
-            df.columns = [col.lower() for col in df.columns]  # Convert column names to lowercase
-            df.rename(columns={'data': 'Data', 'valor (r$)': 'Valor', 'lançamento': 'Histórico'}, inplace=True)
+            print("Identified as Itaú format")
+            
+            # Skip 8 rows and read again with specific column names
+            df = pd.read_excel(filepath, skiprows=8, header=None)
+            print(f"Columns after skiprows: {df.columns.tolist()}")
+            
+            # Set column names based on known Itaú format
+            df.columns = df.iloc[0]
+            df = df[1:]
+            df.columns = ['Data', 'Histórico', 'Documento', 'Valor', 'Saldo']
+            print(f"Columns after setting names: {df.columns.tolist()}")
+            print(f"First few rows:\n{df.head()}")
+            
+            # Remove any summary rows at the end
+            df = df.dropna(subset=['Data', 'Histórico'])
+            
+            # Convert column types
+            df['Data'] = pd.to_datetime(df['Data'])
+            df['Valor'] = pd.to_numeric(df['Valor'], errors='coerce')
+            
+            print("Final DataFrame:")
+            print(df.head())
+            print("\nColumn types:")
+            print(df.dtypes)
         
         total_rows = len(df)
         upload_progress[process_id]['total'] = total_rows
