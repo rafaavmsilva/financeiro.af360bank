@@ -249,6 +249,12 @@ def extract_transaction_info(description, value):
     
     return transaction_info
 
+def identify_bank(df):
+    """Identify the bank based on the content of the DataFrame"""
+    if 'lançamento' in df.columns:
+        return 'Itau'
+    return None
+
 def process_file_with_progress(filepath, process_id):
     try:
         print(f"Iniciando processamento do arquivo: {filepath}")
@@ -257,6 +263,13 @@ def process_file_with_progress(filepath, process_id):
         df = pd.read_excel(filepath)
         print(f"Arquivo lido com sucesso. Total de linhas: {len(df)}")
         print(f"Colunas encontradas: {df.columns.tolist()}")
+
+        # Identify the bank and adjust reading logic
+        bank = identify_bank(df)
+        if bank == 'Itau':
+            df = pd.read_excel(filepath, skiprows=9)  # Skip the first 9 rows for Itaú extratos
+            df.columns = [col.lower() for col in df.columns]  # Convert column names to lowercase
+            df.rename(columns={'data': 'Data', 'valor (r$)': 'Valor', 'lançamento': 'Histórico'}, inplace=True)
         
         total_rows = len(df)
         upload_progress[process_id]['total'] = total_rows
