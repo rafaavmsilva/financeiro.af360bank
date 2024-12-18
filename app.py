@@ -276,16 +276,17 @@ def process_file_with_progress(filepath, process_id):
             # Set column names based on known Itaú format
             df.columns = df.iloc[0]
             df = df[1:]
-            df.columns = ['Data', 'Histórico', 'Documento', 'Valor', 'Saldo']
+            df.columns = ['data', 'lançamento', 'ignore', 'valor (r$)', 'saldo (r$)']
+            df = df.drop(columns=['ignore'])
             print(f"Columns after setting names: {df.columns.tolist()}")
             print(f"First few rows:\n{df.head()}")
             
             # Remove any summary rows at the end
-            df = df.dropna(subset=['Data', 'Histórico'])
+            df = df.dropna(subset=['data', 'lançamento'])
             
             # Convert column types
-            df['Data'] = pd.to_datetime(df['Data'])
-            df['Valor'] = pd.to_numeric(df['Valor'], errors='coerce')
+            df['data'] = pd.to_datetime(df['data'], errors='coerce')
+            df['valor (r$)'] = pd.to_numeric(df['valor (r$)'], errors='coerce')
             
             print("Final DataFrame:")
             print(df.head())
@@ -297,9 +298,9 @@ def process_file_with_progress(filepath, process_id):
         upload_progress[process_id]['message'] = 'Lendo arquivo...'
         
         # Encontra as colunas corretas
-        data_col = find_matching_column(df, ['Data', 'DATE', 'DT', 'AGENCIA'])
-        desc_col = find_matching_column(df, ['Histórico', 'HISTORIC', 'DESCRIÇÃO', 'DESCRICAO', 'CONTA'])
-        valor_col = find_matching_column(df, ['Valor', 'VALUE', 'QUANTIA', 'Unnamed: 4'])
+        data_col = find_matching_column(df, ['data', 'DATE', 'DT', 'AGENCIA'])
+        desc_col = find_matching_column(df, ['lançamento', 'HISTORIC', 'DESCRIÇÃO', 'DESCRICAO', 'CONTA'])
+        valor_col = find_matching_column(df, ['valor (r$)', 'VALUE', 'QUANTIA', 'Unnamed: 4'])
         
         if not all([data_col, desc_col, valor_col]):
             raise Exception(f"Colunas necessárias não encontradas. Colunas disponíveis: {df.columns.tolist()}")
