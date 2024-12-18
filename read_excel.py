@@ -134,11 +134,25 @@ def find_header_row(df):
             return idx
     return 0
 
+def identify_bank(df):
+    """Identify the bank based on the content of the DataFrame"""
+    if 'Santander' in df.columns:
+        return 'Santander'
+    elif 'Data' in df.columns and 'Valor (R$)' in df.columns and 'Histórico' in df.columns:
+        return 'Itau'
+    return None
+
 @retry_on_error()
 def process_excel_file(file):
     """Process Excel file and extract transaction data"""
     try:
         df = pd.read_excel(file)
+        
+        bank = identify_bank(df)
+        if bank == 'Itau':
+            df = pd.read_excel(file, skiprows=9)  # Skip the first 9 rows for Itaú extratos
+            df.columns = [col.lower() for col in df.columns]  # Convert column names to lowercase
+            df.rename(columns={'data': 'Data', 'valor (r$)': 'Valor (R$)', 'lançamento': 'Histórico'}, inplace=True)
         
         # Find the header row
         header_row = find_header_row(df)
