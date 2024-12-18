@@ -251,7 +251,7 @@ def extract_transaction_info(description, value):
 
 def identify_bank(df):
     """Identify the bank based on the content of the DataFrame"""
-    if 'lançamento' in df.columns:
+    if 'Logotipo Itaú' in df.columns:
         return 'Itau'
     return None
 
@@ -267,7 +267,7 @@ def process_file_with_progress(filepath, process_id):
         # Identify the bank and adjust reading logic
         bank = identify_bank(df)
         if bank == 'Itau':
-            df = pd.read_excel(filepath, skiprows=9)  # Skip the first 9 rows for Itaú extratos
+            df = pd.read_excel(filepath, skiprows=8)  # Skip the first 8 rows for Itaú extratos
             df.columns = [col.lower() for col in df.columns]  # Convert column names to lowercase
             df.rename(columns={'data': 'Data', 'valor (r$)': 'Valor', 'lançamento': 'Histórico'}, inplace=True)
         
@@ -282,7 +282,7 @@ def process_file_with_progress(filepath, process_id):
         
         if not all([data_col, desc_col, valor_col]):
             raise Exception(f"Colunas necessárias não encontradas. Colunas disponíveis: {df.columns.tolist()}")
-        
+
         # Conecta ao banco de dados
         conn = get_db_connection()
         cursor = conn.cursor()

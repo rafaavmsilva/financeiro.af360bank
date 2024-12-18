@@ -136,7 +136,7 @@ def find_header_row(df):
 
 def identify_bank(df):
     """Identify the bank based on the content of the DataFrame"""
-    if 'lançamento' in df.columns:
+    if 'Logotipo Itaú' in df.columns:
         return 'Itau'
     return None
 
@@ -148,7 +148,7 @@ def process_excel_file(file):
         
         bank = identify_bank(df)
         if bank == 'Itau':
-            df = pd.read_excel(file, skiprows=9)  # Skip the first 9 rows for Itaú extratos
+            df = pd.read_excel(file, skiprows=8)  # Skip the first 8 rows for Itaú extratos
             df.columns = [col.lower() for col in df.columns]  # Convert column names to lowercase
             df.rename(columns={'data': 'Data', 'valor (r$)': 'Valor', 'lançamento': 'Histórico'}, inplace=True)
         
