@@ -138,7 +138,7 @@ def identify_bank(df):
     """Identify the bank based on the content of the DataFrame"""
     if 'Santander' in df.columns:
         return 'Santander'
-    elif 'Data' in df.columns and 'Valor (R$)' in df.columns and 'Histórico' in df.columns:
+    elif 'lançamento' in df.columns:
         return 'Itau'
     return None
 
