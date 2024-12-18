@@ -136,48 +136,22 @@ def find_header_row(df):
 
 def identify_bank(df):
     """Identify the bank based on the content of the DataFrame"""
-    print("Checking bank identification...")
-    print(f"First row: {df.iloc[0].tolist()}")
-    
     if 'Logotipo Itaú' in df.columns:
-        print("Found Itaú logo")
         return 'Itau'
     return None
 
 @retry_on_error()
 def process_excel_file(file):
+    """Process Excel file and extract transaction data"""
     try:
-        print("Reading Excel file...")
         df = pd.read_excel(file)
-        print(f"Initial columns: {df.columns.tolist()}")
         
         bank = identify_bank(df)
         if bank == 'Itau':
-            print("Identified as Itaú format")
-            
-            # Skip 8 rows and read again with specific column names
-            df = pd.read_excel(file, skiprows=8)
-            print(f"Columns after skiprows: {df.columns.tolist()}")
-            
-            # Set column names based on known Itaú format
-            df.columns = ['Data', 'Histórico', 'Documento', 'Valor', 'Saldo']
-            print(f"Columns after setting names: {df.columns.tolist()}")
-            print(f"First few rows:\n{df.head()}")
-            
-            # Remove any summary rows at the end
-            df = df.dropna(subset=['Data', 'Histórico'])
-            
-            # Convert column types
-            df['Data'] = pd.to_datetime(df['Data'])
-            df['Valor'] = pd.to_numeric(df['Valor'], errors='coerce')
-            
-            print("Final DataFrame:")
-            print(df.head())
-            print("\nColumn types:")
-            print(df.dtypes)
-            
-            return df
-
+            df = pd.read_excel(file, skiprows=8)  # Skip the first 8 rows for Itaú extratos
+            df.columns = [col.lower() for col in df.columns]  # Convert column names to lowercase
+            df.rename(columns={'data': 'Data', 'valor (r$)': 'Valor', 'lançamento': 'Histórico'}, inplace=True)
+        
         # Find the header row
         header_row = find_header_row(df)
         if header_row > 0:
