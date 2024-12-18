@@ -136,21 +136,34 @@ def find_header_row(df):
 
 def identify_bank(df):
     """Identify the bank based on the content of the DataFrame"""
+    # Check first row for Itaú logo
     if 'Logotipo Itaú' in df.columns:
         return 'Itau'
+    # Check for Itaú column pattern
+    if all(col.startswith('unnamed:') for col in df.columns.str.lower()):
+        first_row = df.iloc[0]
+        if 'data' in str(first_row[0]).lower() and 'lançamento' in str(first_row[1]).lower():
+            return 'Itau'
     return None
 
 @retry_on_error()
 def process_excel_file(file):
-    """Process Excel file and extract transaction data"""
     try:
+        print("Reading Excel file...")
         df = pd.read_excel(file)
+        print(f"Initial columns: {df.columns.tolist()}")
         
         bank = identify_bank(df)
         if bank == 'Itau':
-            df = pd.read_excel(file, skiprows=8)  # Skip the first 8 rows for Itaú extratos
-            df.columns = [col.lower() for col in df.columns]  # Convert column names to lowercase
-            df.rename(columns={'data': 'Data', 'valor (r$)': 'Valor', 'lançamento': 'Histórico'}, inplace=True)
+            print("Identified as Itaú format")
+            # Skip 10 rows to get past header info
+            df = pd.read_excel(file, skiprows=10)
+            print(f"Columns after skiprows: {df.columns.tolist()}")
+            
+            # Set column names based on known Itaú format
+            df.columns = ['Data', 'Histórico', 'Documento', 'Valor', 'Saldo']
+            print(f"Final columns: {df.columns.tolist()}")
+            print(f"First few rows:\n{df.head()}")
         
         # Find the header row
         header_row = find_header_row(df)
