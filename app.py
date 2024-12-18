@@ -371,7 +371,7 @@ def process_file_with_progress(filepath, process_id):
                 
                 # Mapeamento de palavras-chave para tipos de transação
                 type_mapping = {
-                    'PIX RECEBIDO': ['PIX RECEBIDO'],
+                    'PIX RECEBIDO': ['PIX RECEBIDO', 'MOV TIT COB'],
                     'PIX ENVIADO': ['PIX ENVIADO'],
                     'TED RECEBIDA': ['TED RECEBIDA', 'TED CREDIT'],
                     'TED ENVIADA': ['TED ENVIADA', 'TED DEBIT'],
@@ -382,7 +382,7 @@ def process_file_with_progress(filepath, process_id):
                     'APLICACAO': ['APLICACAO', 'APLICAÇÃO'],
                     'COMPRA': ['COMPRA'],
                     'COMPENSACAO': ['COMPENSACAO', 'COMPENSAÇÃO'],
-                    'CHEQUE': ['CHEQUE'],
+                    'CHEQUE': ['CHEQUE', 'CH'],
                     'TRANSFERENCIA': ['TRANSFERENCIA', 'TRANSF'],
                     'JUROS': ['JUROS'],
                     'MULTA': ['MULTA']
