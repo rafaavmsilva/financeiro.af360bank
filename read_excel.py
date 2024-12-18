@@ -155,12 +155,24 @@ def process_excel_file(file):
         if bank == 'Itau':
             print("Identified as Itaú format")
             
-            # Skip 10 rows and read again with specific column names
-            df = pd.read_excel(file, skiprows=10, 
-                             names=['Data', 'Histórico', 'Documento', 'Valor', 'Saldo'])
+            # Read file again skipping header content, using first row as header
+            df = pd.read_excel(file, skiprows=9, header=0)
+            print("After reading with header row:")
+            print(df.columns.tolist())
             
-            print(f"Columns after setting names: {df.columns.tolist()}")
-            print(f"First few rows:\n{df.head()}")
+            # Map columns to standard names
+            column_mapping = {
+                'data': 'Data',
+                'lançamento': 'Histórico',
+                'valor (r$)': 'Valor',
+                'saldo (r$)': 'Saldo'
+            }
+            
+            # Convert columns to lowercase for consistent mapping
+            df.columns = [col.lower() for col in df.columns]
+            df = df.rename(columns=column_mapping)
+            print("After column rename:")
+            print(df.columns.tolist())
             
             # Remove any summary rows at the end
             df = df.dropna(subset=['Data', 'Histórico'])
@@ -173,6 +185,8 @@ def process_excel_file(file):
             print(df.head())
             print("\nColumn types:")
             print(df.dtypes)
+            
+            return df
         
         # Find the header row
         header_row = find_header_row(df)
