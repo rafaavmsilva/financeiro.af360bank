@@ -156,12 +156,26 @@ def process_excel_file(file):
         bank = identify_bank(df)
         if bank == 'Itau':
             print("Identified as Itaú format")
-            # Skip 10 rows to get past header info
-            df = pd.read_excel(file, skiprows=10)
+            # Skip 9 rows to get past header info and read again
+            df = pd.read_excel(file, skiprows=9)
             print(f"Columns after skiprows: {df.columns.tolist()}")
+            print(f"First row after skip: {df.iloc[0].tolist()}")
             
-            # Set column names based on known Itaú format
-            df.columns = ['Data', 'Histórico', 'Documento', 'Valor', 'Saldo']
+            # Get the first row as column names
+            df.columns = df.iloc[0]
+            # Remove the header row
+            df = df.iloc[1:].reset_index(drop=True)
+            
+            # Clean up column names
+            df.columns = [str(col).strip().lower() for col in df.columns]
+            # Rename columns to standard format
+            column_mapping = {
+                'data': 'Data',
+                'lançamento': 'Histórico',
+                'valor (r$)': 'Valor'
+            }
+            df = df.rename(columns=column_mapping)
+            
             print(f"Final columns: {df.columns.tolist()}")
             print(f"First few rows:\n{df.head()}")
         
