@@ -20,29 +20,187 @@ app.config['SECRET_KEY'] = 'your-secret-key-here'
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=1)  # Set session lifetime to 1 hour
 
-# Global variables
+# Variáveis Globais
 upload_progress = {}  # Dictionary to track file upload progress
 cnpj_cache = {}  # Cache global para armazenar informações de CNPJs
 failed_cnpjs = set()  # Conjunto para armazenar CNPJs que falharam
 
-# Initialize AuthClient
+# Inicialização do AuthClient
 auth_client = AuthClient(
     auth_server_url=os.getenv('AUTH_SERVER_URL', 'https://af360bank.onrender.com'),
     app_name=os.getenv('APP_NAME', 'financeiro')
 )
 auth_client.init_app(app)
 
-# Ensure the upload and instance folders exist
+# Confirmar que os diretórios de instância e uploads existem
 for folder in ['instance', 'uploads']:
     if not os.path.exists(folder):
         os.makedirs(folder)
 
-# Rate limiting configuration
-RATE_LIMIT_WINDOW = 60  # seconds
-REQUEST_LIMIT = 60      # requests per window
+# configuração de rate limit
+RATE_LIMIT_WINDOW = 60  # segundos
+REQUEST_LIMIT = 60      # requests
 request_history = {}
 
+def retry_on_error(max_retries=3, delay=5):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    if attempt == max_retries - 1:  # Last attempt
+                        raise Exception(f"Failed after {max_retries} attempts: {str(e)}")
+                    time.sleep(delay)
+            return None
+        return wrapper
+    return decorator
+
+def find_header_row(df):
+    """Encontra a linha que contém os cabeçalhos das colunas"""
+    header_keywords = ['data', 'histórico', 'valor', 'date', 'historic', 'value']
+    
+    for idx, row in df.iterrows():
+        # Convert all values to string and check if any contain our keywords
+        row_values = [str(val).lower().strip() for val in row if not pd.isna(val)]
+        if any(keyword in value for value in row_values for keyword in header_keywords):
+            return idx
+    return 0
+
+@retry_on_error()
+def process_excel_file(file):
+    """Process Excel file and extract transaction data"""
+    try:
+        print("Reading Excel file...")
+        df = pd.read_excel(file)
+        print(f"Initial columns: {df.columns.tolist()}")
+        
+        bank = identify_bank(df)
+        if bank == 'Itau':
+            print("Identified as Itaú format")
+            
+            # Skip 8 rows and read again with specific column names
+            df = pd.read_excel(file, skiprows=8, header=None)
+            print(f"Columns after skiprows: {df.columns.tolist()}")
+            
+            # Set column names based on known Itaú format
+            df.columns = df.iloc[0]
+            df = df[1:]
+            df.columns = ['data', 'lançamento', 'ignore', 'valor (r$)', 'saldo (r$)']
+            df = df.drop(columns=['ignore'])
+            print(f"Columns after setting names: {df.columns.tolist()}")
+            print(f"First few rows:\n{df.head()}")
+            
+            # Remove any summary rows at the end
+            df = df.dropna(subset=['data', 'lançamento'])
+            
+            # Convert column types
+            df['data'] = pd.to_datetime(df['data'], errors='coerce')
+            df['valor (r$)'] = pd.to_numeric(df['valor (r$)'], errors='coerce')
+            
+            print("Final DataFrame:")
+            print(df.head())
+            print("\nColumn types:")
+            print(df.dtypes)
+            
+            return df
+
+        # Find the header row
+        header_row = find_header_row(df)
+        if header_row > 0:
+            # Get the header row values
+            new_columns = [str(val).strip() if not pd.isna(val) else f'Column_{i}' 
+                         for i, val in enumerate(df.iloc[header_row])]
+            df.columns = new_columns
+            df = df.iloc[header_row + 1:].reset_index(drop=True)
+        
+        # Find relevant columns
+        data_col = find_matching_column(df, ['Data', 'DATE', 'DT'])
+        historico_col = find_matching_column(df, ['Histórico', 'HISTORIC', 'DESCRIÇÃO', 'DESCRICAO'])
+        valor_col = find_matching_column(df, ['Valor', 'VALUE', 'QUANTIA'])
+        
+        if not all([data_col, historico_col, valor_col]):
+            raise Exception("Não foi possível encontrar todas as colunas necessárias")
+        
+        transactions = []
+        
+        for _, row in df.iterrows():
+            try:
+                # Get date
+                data = row[data_col]
+                if pd.isna(data):
+                    continue
+                    
+                # Handle different date formats
+                try:
+                    if isinstance(data, str):
+                        # Try different date formats
+                        try:
+                            data = datetime.strptime(data, '%d/%m/%Y').strftime('%Y-%m-%d')
+                        except ValueError:
+                            try:
+                                data = datetime.strptime(data, '%Y-%m-%d').strftime('%Y-%m-%d')
+                            except ValueError:
+                                print(f"Erro ao processar linha {_}: 'Data'")
+                                print(f"Dados da linha: {dict(row)}")
+                                continue
+                    elif isinstance(data, datetime):
+                        data = data.strftime('%Y-%m-%d')
+                    else:
+                        try:
+                            data = pd.to_datetime(data).strftime('%Y-%m-%d')
+                        except:
+                            print(f"Erro ao processar linha {_}: 'Data'")
+                            print(f"Dados da linha: {dict(row)}")
+                            continue
+                except Exception as e:
+                    print(f"Erro ao processar linha {_}: 'Data'")
+                    print(f"Dados da linha: {dict(row)}")
+                    continue
+                
+                # Get description
+                historico = str(row[historico_col]).strip()
+                if pd.isna(historico) or not historico:
+                    continue
+                
+                # Get value and convert to float
+                valor = row[valor_col]
+                if pd.isna(valor):
+                    continue
+                    
+                if isinstance(valor, (int, float)):
+                    valor = float(valor)
+                else:
+                    valor_str = str(valor).replace('R$', '').strip()
+                    valor = float(valor_str.replace('.', '').replace(',', '.'))
+                
+                # Extract transaction info
+                info = extract_transaction_info(historico, valor)
+                
+                transactions.append({
+                    'date': data,
+                    'description': info['description'],
+                    'value': valor,
+                    'type': info['tipo'],
+                    'document': info.get('document', ''),
+                    'identifier': info.get('identificador', ''),
+                    'transaction_type': 'receita' if valor > 0 else 'despesa'
+                })
+                
+            except Exception as e:
+                print(f"Erro ao processar linha: {e}")
+                continue
+        
+        if not transactions:
+            raise Exception("Nenhuma transação válida encontrada no arquivo")
+            
+        return transactions
+        
+    except Exception as e:
+        raise Exception(f"Erro ao processar arquivo Excel: {str(e)}")
 @app.route('/auth')
+
 def auth():
     token = request.args.get('token')
     if not token:
@@ -52,10 +210,10 @@ def auth():
     if not verification or not verification.get('valid'):
         return redirect('https://af360bank.onrender.com/login')
     
-    # Set session variables
+    # Configurar variáveis de sessão
     session['token'] = token
     session['authenticated'] = True
-    session.permanent = True  # Make the session last longer
+    session.permanent = True  # Aumenta duração da sessão 
     
     return redirect(url_for('index'))
 
@@ -81,22 +239,22 @@ def rate_limit():
             now = time.time()
             client_ip = request.remote_addr
             
-            # Initialize or clean old requests
+            # Iniciar ou limpar histórico de requisições
             if client_ip not in request_history:
                 request_history[client_ip] = []
             request_history[client_ip] = [t for t in request_history[client_ip] if t > now - RATE_LIMIT_WINDOW]
             
-            # Check rate limit
+            # Verificar rate limit
             if len(request_history[client_ip]) >= REQUEST_LIMIT:
                 return jsonify({'error': 'Rate limit exceeded. Please try again later.'}), 429
             
-            # Add current request
+            # Adicionar a request atual ao histórico
             request_history[client_ip].append(now)
             return f(*args, **kwargs)
         return wrapped
     return decorator
 
-# Database connection helper
+# Conectar a database
 def get_db_connection():
     # Ensure instance directory exists
     os.makedirs('instance', exist_ok=True)
@@ -104,12 +262,12 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
-# Database initialization
+# Iniciar a database
 def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Create tables
+    # Criar as tabelas
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122,7 +280,7 @@ def init_db():
         )
     ''')
     
-    # Create indexes
+    # Criar index
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_transactions_document ON transactions(document)')
@@ -130,7 +288,7 @@ def init_db():
     conn.commit()
     conn.close()
 
-# Initialize the database when the app starts
+# Iniciar a database junto com o app
 init_db()
 
 def allowed_file(filename):
@@ -264,16 +422,16 @@ def process_file_with_progress(filepath, process_id):
         print(f"Arquivo lido com sucesso. Total de linhas: {len(df)}")
         print(f"Colunas encontradas: {df.columns.tolist()}")
 
-        # Identify the bank and adjust reading logic
+        # Identifica o banco do extrato
         bank = identify_bank(df)
         if bank == 'Itau':
             print("Identified as Itaú format")
             
-            # Skip 8 rows and read again with specific column names
+            # Pula as primeiras 8 linhas e define nomes de colunas
             df = pd.read_excel(filepath, skiprows=8, header=None)
             print(f"Columns after skiprows: {df.columns.tolist()}")
             
-            # Set column names based on known Itaú format
+            # Define nomes de colunas baseado no formato do Extrato do Itaú
             df.columns = df.iloc[0]
             df = df[1:]
             df.columns = ['data', 'lançamento', 'ignore', 'valor (r$)', 'saldo (r$)']
@@ -281,10 +439,10 @@ def process_file_with_progress(filepath, process_id):
             print(f"Columns after setting names: {df.columns.tolist()}")
             print(f"First few rows:\n{df.head()}")
             
-            # Remove any summary rows at the end
+            # Remove qualquer linha com valores nulos
             df = df.dropna(subset=['data', 'lançamento'])
             
-            # Convert column types
+            # Converte os tipos de coluna
             df['data'] = pd.to_datetime(df['data'], errors='coerce')
             df['valor (r$)'] = pd.to_numeric(df['valor (r$)'], errors='coerce')
             
@@ -388,7 +546,7 @@ def process_file_with_progress(filepath, process_id):
                     'MULTA': ['MULTA']
                 }
                 
-                # Primeiro, tenta encontrar o tipo pela descrição
+                # Tenta encontrar o tipo pela descrição
                 for tipo, keywords in type_mapping.items():
                     if any(keyword in description_upper for keyword in keywords):
                         transaction_type = tipo
@@ -409,15 +567,15 @@ def process_file_with_progress(filepath, process_id):
                 # Extrai CNPJ se presente
                 cnpj = None
                 if transaction_type:
-                    # Find sequence of 14 digits that could be a CNPJ
+                    # Proocura por um CNPJ de acordo com o número de caracteres
                     import re
                     
-                    # Try different CNPJ patterns
+                    # Tenta diferentes padrões do CNPJ
                     cnpj_patterns = [
-                        r'CNPJ[:\s]*(\d{14,15})',  # CNPJ followed by 14 or 15 digits
-                        r'CNPJ[:\s]*(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})',  # CNPJ followed by formatted number
-                        r'\b(\d{14,15})\b',  # Just 14 or 15 digits
-                        r'\b(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})\b'  # Formatted CNPJ
+                        r'CNPJ[:\s]*(\d{14,15})',  # CNPJ (14 ou 15 dígitos)
+                        r'CNPJ[:\s]*(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})',  # CNPJ seguido de uma sequencia de números
+                        r'\b(\d{14,15})\b',  # Apenas 14 ou 15 dígitos sem indicação
+                        r'\b(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})\b'  # CNPJ formatado corretamente
                     ]
                     
                     cnpj_match = None
@@ -428,12 +586,12 @@ def process_file_with_progress(filepath, process_id):
                             break
                     
                     if cnpj_match:
-                        # Extract CNPJ and handle 15-digit case
+                        # Se o CNPJ tiver 15 dígitos e começar com zero
                         cnpj = ''.join(filter(str.isdigit, cnpj_match.group(1)))
                         if len(cnpj) == 15 and cnpj.startswith('0'):
-                            cnpj = cnpj[1:]  # Remove first zero only if 15 digits
+                            cnpj = cnpj[1:]  # Remova o 0 inicial 
                         elif len(cnpj) != 14:
-                            cnpj = None  # Invalid CNPJ length
+                            cnpj = None  # CNPJ inválido
                 
                 # Insere no banco de dados
                 cursor.execute('''
@@ -448,7 +606,7 @@ def process_file_with_progress(filepath, process_id):
                 print(f"Dados da linha: {row.to_dict()}")
                 continue
         
-        # Commit e fecha conexão
+        # Commit as alterações
         conn.commit()
         conn.close()
         
@@ -505,13 +663,13 @@ def recebidos():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Get filters from query string
+    # Pega os filtros da query string
     tipo_filtro = request.args.get('tipo', 'todos')
     cnpj_filtro = request.args.get('cnpj', 'todos')
     start_date = request.args.get('start_date', '')
     end_date = request.args.get('end_date', '')
     
-    # Get unique CNPJs and their company names for the filter dropdown
+    # Pega a lista de CNPJs para o filtro
     cursor.execute('''
         SELECT DISTINCT document
         FROM transactions 
@@ -521,7 +679,7 @@ def recebidos():
     
     cnpjs = []
     for row in cursor.fetchall():
-        if row[0]:  # Only if document is not null
+        if row[0]:  # Apenas CNPJs não nulos
             company_info = get_company_info(row[0])
             if company_info:
                 company_name = company_info.get('nome_fantasia') or company_info.get('razao_social', '')
@@ -531,14 +689,14 @@ def recebidos():
                         'name': f"{company_name} ({row[0]})"
                     })
     
-    # Base query for transactions
+    # Base query para as transações
     query = '''
         SELECT date, description, value, type, document
         FROM transactions
         WHERE type IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO')
     '''
     
-    # Add filters if necessary
+    # Adiciona os filros se necessário
     params = []
     if tipo_filtro != 'todos':
         query += " AND type = ?"
@@ -576,7 +734,7 @@ def recebidos():
             'has_company_info': False
         }
         
-        # Add to corresponding total
+        # Adiciona ao total no qual se encaixa
         if transaction['type'] == 'PIX RECEBIDO':
             totals['pix_recebido'] += transaction['value']
         elif transaction['type'] == 'TED RECEBIDA':
@@ -584,7 +742,7 @@ def recebidos():
         elif transaction['type'] == 'PAGAMENTO':
             totals['pagamento'] += abs(transaction['value'])
         
-        # Get company name if CNPJ exists
+        # Consulta o CNPJ para obter informações da empresa
         if transaction['document']:
             company_info = get_company_info(transaction['document'])
             if company_info:
@@ -621,7 +779,7 @@ def retry_failed_cnpjs():
 @app.route('/retry-failed-cnpjs', methods=['POST'])
 @login_required
 def retry_failed_cnpjs_post():
-    # POST request - retry failed CNPJs
+    # Da POST no request para evitar reenvio de formulário
     success_count = 0
     still_failed = set()
     
@@ -631,10 +789,10 @@ def retry_failed_cnpjs_post():
     try:
         for cnpj in failed_cnpjs.copy():
             try:
-                # Handle 15-digit CNPJ
+                # Verfica se o CNPJ tem 15 dígitos
                 api_cnpj = cnpj
                 if len(cnpj) == 15 and cnpj.startswith('0'):
-                    api_cnpj = cnpj[1:]  # Remove first zero only if 15 digits
+                    api_cnpj = cnpj[1:]  # Nesse caso remove o zero inicial
                 
                 response = requests.get(f'https://brasilapi.com.br/api/cnpj/v1/{api_cnpj}', timeout=5)
                 if response.status_code == 200:
@@ -699,7 +857,7 @@ def transactions_summary():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Get transactions grouped by type, excluding PIX RECEBIDO, TED RECEBIDA, and PAGAMENTO
+    # Separa as transações por tipo, exceto os recebidos (PIX RECEBIDO, TED RECEBIDA, e PAGAMENTO)
     cursor.execute('''
         SELECT 
             type,
@@ -756,19 +914,19 @@ def cnpj_verification_page():
     return render_template('cnpj_verification.html', active_page='cnpj_verification')
 
 def extract_and_enrich_cnpj(description, transaction_type):
-    # Find sequence of 14 digits that could be a CNPJ
+    # Procura uma sequência de números com 14 que pode ser um CNPJ
     import re
     
-    # Only process PIX RECEBIDO, TED RECEBIDA, and PAGAMENTO
+    # Processa apenas os recebidos (PIX RECEBIDO, TED RECEBIDA, e PAGAMENTO)
     if transaction_type not in ['PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO']:
         return description
     
-    # Try different CNPJ patterns
+    # Tenta diferentes padrões do CNPJ
     cnpj_patterns = [
-        r'CNPJ[:\s]*(\d{14,15})',  # CNPJ followed by 14 or 15 digits
-        r'CNPJ[:\s]*(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})',  # CNPJ followed by formatted number
-        r'\b(\d{14,15})\b',  # Just 14 or 15 digits
-        r'\b(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})\b'  # Formatted CNPJ
+        r'CNPJ[:\s]*(\d{14,15})',  # CNPJ seguido de uma sequencia de 14 ou 15 digitos
+        r'CNPJ[:\s]*(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})',  # CNPJ seguido de um cnpj formatado
+        r'\b(\d{14,15})\b',  # Sequencia de 14 ou 15 dígitos sem indicação
+        r'\b(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})\b'  # CNPJ formatado
     ]
     
     cnpj_match = None
@@ -781,12 +939,12 @@ def extract_and_enrich_cnpj(description, transaction_type):
     if not cnpj_match:
         return description
         
-    # Extract CNPJ and handle 15-digit case
+    # Extrai o CNPJ se tiver 15 dígitos
     cnpj = ''.join(filter(str.isdigit, cnpj_match.group(1)))
     if len(cnpj) == 15 and cnpj.startswith('0'):
-        cnpj = cnpj[1:]  # Remove first zero only if 15 digits
+        cnpj = cnpj[1:]  # Nesse caso remove o zero inicial
     elif len(cnpj) != 14:
-        return description  # Invalid CNPJ length
+        return description  # CNPJ inválido
     
     try:
         if cnpj in cnpj_cache:
