@@ -1,14 +1,13 @@
 # Sistema Financeiro
 
-Um sistema web para gerenciamento de finanças pessoais desenvolvido com Flask e SQLite.
+Um sistema web para leitura de extratos bancarios e validação de CNPJ.Desenvolvido com Flask e SQLite.
 
 ## Funcionalidades
 
 - Registro de receitas e despesas
-- Visualização do saldo atual
+- Verificação e identificação de CNPJs pela receita federal
 - Histórico de transações
-- Interface responsiva e moderna
-- Armazenamento em banco de dados SQLite
+- Armazenamento em banco de dados do SQLite
 
 ## Requisitos
 
@@ -16,7 +15,7 @@ Um sistema web para gerenciamento de finanças pessoais desenvolvido com Flask e
 - Flask
 - SQLite3
 
-## Instalação
+## Instalação (Necessário Remover os Códigos de Verificação de token)
 
 1. Clone o repositório ou baixe os arquivos
 2. Instale as dependências:
@@ -52,10 +51,6 @@ projeto_financeiro/
 ## Uso
 
 1. Acesse a página principal
-2. Use o formulário para adicionar novas transações
-3. Visualize o resumo financeiro nos cards no topo
+2. Use o formulário para importar um extrato
+3. Visualize o resumo financeiro e as inforamações dos CNPJs
 4. Consulte o histórico de transações na tabela
-
-## Contribuição
-
-Sinta-se à vontade para contribuir com melhorias através de pull requests.
