@@ -585,16 +585,17 @@ def enviados():
 def recebidos():
     if not session.get('authenticated'):
         return redirect('https://af360bank.onrender.com/login')
+        
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Get filters from query string
+    # Get filters
     tipo_filtro = request.args.get('tipo', 'todos')
     cnpj_filtro = request.args.get('cnpj', 'todos')
     start_date = request.args.get('start_date', '')
     end_date = request.args.get('end_date', '')
     
-    # Get unique CNPJs for received transactions
+    # Get unique CNPJs
     cursor.execute('''
         SELECT DISTINCT document
         FROM transactions 
@@ -615,7 +616,7 @@ def recebidos():
                         'name': f"{company_name} ({row[0]})"
                     })
     
-    # Base query for received transactions
+    # Base query
     query = '''
         SELECT date, description, value, type, document
         FROM transactions
@@ -644,6 +645,7 @@ def recebidos():
     query += " ORDER BY date DESC"
     cursor.execute(query, params)
     
+    # Process transactions
     transactions = []
     totals = {
         'pix_recebido': 0.0,
@@ -661,7 +663,7 @@ def recebidos():
             'has_company_info': False
         }
         
-        # Add to corresponding total
+        # Calculate totals
         if transaction['type'] == 'PIX RECEBIDO':
             totals['pix_recebido'] += transaction['value']
         elif transaction['type'] == 'TED RECEBIDA':
@@ -669,7 +671,7 @@ def recebidos():
         elif transaction['type'] == 'PAGAMENTO':
             totals['pagamento'] += abs(transaction['value'])
         
-        # Get company name if CNPJ exists
+        # Get company info
         if transaction['document']:
             company_info = get_company_info(transaction['document'])
             if company_info:
@@ -688,6 +690,7 @@ def recebidos():
         transactions.append(transaction)
     
     conn.close()
+    
     return render_template('recebidos.html', 
                          transactions=transactions, 
                          totals=totals, 
