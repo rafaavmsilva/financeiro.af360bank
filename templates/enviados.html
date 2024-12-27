@@ -1,31 +1,156 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Enviados</title>
-</head>
-<body>
-    <h1>Enviados</h1>
-    <table>
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>Data</th>
-                <th>Valor</th>
-                <th>Descrição</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for item in enviados %}
-            <tr>
-                <td>{{ item.id }}</td>
-                <td>{{ item.data }}</td>
-                <td>{{ item.valor }}</td>
-                <td>{{ item.descricao }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</body>
-</html>
+<!-- filepath: /d:/repositorys/financeiro.af360bank/templates/enviados.html -->
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Enviados e Pagamentos</h2>
+    
+    {% if failed_cnpjs > 0 %}
+    <div class="alert alert-warning alert-dismissible fade show" role="alert">
+        <strong>Atenção!</strong> {{ failed_cnpjs }} CNPJs não puderam ser consultados.
+        <button id="retryButton" class="btn btn-sm btn-warning ms-2">Tentar Novamente</button>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endif %}
+    
+    <div class="row">
+        <div class="col">
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title">Resumo</h5>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <p>Total PIX Enviado: R$ {{ "%.2f"|format(totals.pix_enviado|float)|replace('.', ',') }}</p>
+                        </div>
+                        <div class="col-md-4">
+                            <p>Total TED Enviada: R$ {{ "%.2f"|format(totals.ted_enviada|float)|replace('.', ',') }}</p>
+                        </div>
+                        <div class="col-md-4">
+                            <p>Total Pagamentos: R$ {{ "%.2f"|format(totals.pagamento|float)|replace('.', ',') }}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filtros -->
+    <div class="row mb-3">
+        <div class="col-md-4">
+            <div class="btn-group" role="group" aria-label="Filtro de transações">
+                <a href="{{ url_for('enviados', tipo='todos', cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
+                   class="btn btn-outline-primary {% if tipo_filtro == 'todos' %}active{% endif %}">
+                    Todos
+                </a>
+                <a href="{{ url_for('enviados', tipo='PIX ENVIADO', cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
+                   class="btn btn-outline-success {% if tipo_filtro == 'PIX ENVIADO' %}active{% endif %}">
+                    PIX
+                </a>
+                <a href="{{ url_for('enviados', tipo='TED ENVIADA', cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
+                   class="btn btn-outline-info {% if tipo_filtro == 'TED ENVIADA' %}active{% endif %}">
+                    TED
+                </a>
+                <a href="{{ url_for('enviados', tipo='PAGAMENTO', cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
+                   class="btn btn-outline-warning {% if tipo_filtro == 'PAGAMENTO' %}active{% endif %}">
+                    Pagamentos
+                </a>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="form-group">
+                <select class="form-select" id="cnpjFilter" onchange="filterByCNPJ(this.value)">
+                    <option value="todos" {% if cnpj_filtro == 'todos' %}selected{% endif %}>Todos os CNPJs</option>
+                    {% for cnpj in cnpjs %}
+                    <option value="{{ cnpj.cnpj }}" {% if cnpj_filtro == cnpj.cnpj %}selected{% endif %}>
+                        {{ cnpj.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="row">
+                <div class="col-6">
+                    <div class="form-group">
+                        <input type="date" class="form-control" id="startDate" value="{{ start_date }}" onchange="filterByDate()">
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="form-group">
+                        <input type="date" class="form-control" id="endDate" value="{{ end_date }}" onchange="filterByDate()">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Data</th>
+                        <th>Tipo</th>
+                        <th>Descrição</th>
+                        <th>Valor</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for transaction in transactions %}
+                    <tr>
+                        <td>{{ transaction.date }}</td>
+                        <td>
+                            <span class="badge {% if transaction.type == 'PIX ENVIADO' %}bg-success{% elif transaction.type == 'TED ENVIADA' %}bg-info{% else %}bg-warning{% endif %}">
+                                {{ transaction.type }}
+                            </span>
+                        </td>
+                        <td>{{ transaction.description }}</td>
+                        <td class="{% if transaction.value > 0 %}text-success{% else %}text-danger{% endif %}">
+                            R$ {{ "%.2f"|format(transaction.value|float)|replace('.', ',') }}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('retryButton')?.addEventListener('click', function() {
+    this.disabled = true;
+    this.textContent = 'Tentando...';
+    
+    fetch('/retry_failed_cnpjs')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Erro ao tentar novamente. Por favor, recarregue a página.');
+            }
+        })
+        .catch(error => {
+            console.error('Erro:', error);
+            alert('Erro ao tentar novamente. Por favor, recarregue a página.');
+        });
+});
+
+function filterByCNPJ(cnpj) {
+    const currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.set('cnpj', cnpj);
+    window.location.href = currentUrl.toString();
+}
+
+function filterByDate() {
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+    const currentUrl = new URL(window.location.href);
+    
+    if (startDate) currentUrl.searchParams.set('start_date', startDate);
+    if (endDate) currentUrl.searchParams.set('end_date', endDate);
+    
+    window.location.href = currentUrl.toString();
+}
+</script>
+{% endblock %}
