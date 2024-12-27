@@ -43,6 +43,11 @@
                     </a>
                 </li>
                 <li class="nav-item">
+                    <a class="nav-link {{ 'active' if active_page == 'enviados' }}" href="{{ url_for('enviados') }}">
+                        <i class="fas fa-money-bill-wave"></i> Enviados
+                    </a>
+                </li>
+                <li class="nav-item">
                     <a class="nav-link {{ 'active' if active_page == 'transactions_summary' }}" href="{{ url_for('transactions_summary') }}">
                         <i class="fas fa-list"></i> Resumo de Transações
                     </a>
