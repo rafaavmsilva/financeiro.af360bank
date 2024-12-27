@@ -462,6 +462,13 @@ def health_check():
         'app_name': os.getenv('APP_NAME')
     })
 
+@app.route('/enviados')
+def enviados():
+    conn = get_db_connection()
+    enviados = conn.execute('SELECT * FROM transactions WHERE tipo = "Pagamento de"').fetchall()
+    conn.close()
+    return render_template('enviados.html', enviados=enviados)
+
 @app.route('/recebidos')
 @login_required
 def recebidos():
@@ -557,7 +564,7 @@ def recebidos():
                 if company_name:
                     cnpj_sem_zeros = str(int(transaction['document']))
                     
-                    if transaction['type'] == 'PAGAMENTO':
+                    if transaction['type'] == 'PAGAMENTO' and 'PAGAMENTO A' in transaction['description']:
                         transaction['description'] = f"PAGAMENTO A FORNECEDORES {company_name} ({cnpj_sem_zeros})"
                     elif transaction['type'] == 'PIX RECEBIDO':
                         transaction['description'] = f"PIX RECEBIDO {company_name} ({cnpj_sem_zeros})"
@@ -565,7 +572,9 @@ def recebidos():
                         transaction['description'] = f"TED RECEBIDA {company_name} ({cnpj_sem_zeros})"
                     transaction['has_company_info'] = True
         
-        transactions.append(transaction)
+        # Only include "PAGAMENTO A" transactions
+        if transaction['type'] != 'PAGAMENTO' or 'PAGAMENTO A' in transaction['description']:
+            transactions.append(transaction)
     
     conn.close()
     return render_template('recebidos.html', 
