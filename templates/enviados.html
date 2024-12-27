@@ -1,4 +1,3 @@
-<!-- filepath: /d:/repositorys/financeiro.af360bank/templates/enviados.html -->
 {% extends "base.html" %}
 
 {% block content %}
@@ -19,68 +18,37 @@
                 <div class="card-body">
                     <h5 class="card-title">Resumo</h5>
                     <div class="row">
-                        <div class="col-md-4">
-                            <p>Total PIX Enviado: R$ {{ "%.2f"|format(totals.pix_enviado|float)|replace('.', ',') }}</p>
+                        {% for key, value in totals.items() %}
+                        <div class="col-md-3 mb-2">
+                            <p class="mb-0">
+                                {{ key|replace('_', ' ')|title }}: 
+                                R$ {{ "%.2f"|format(value|default(0)|float)|replace('.', ',') }}
+                            </p>
                         </div>
-                        <div class="col-md-4">
-                            <p>Total TED Enviada: R$ {{ "%.2f"|format(totals.ted_enviada|float)|replace('.', ',') }}</p>
-                        </div>
-                        <div class="col-md-4">
-                            <p>Total Pagamentos: R$ {{ "%.2f"|format(totals.pagamento|float)|replace('.', ',') }}</p>
-                        </div>
-                        <div class="col-md-3">
-                            <p>Juros: R$ {{ "%.2f"|format(totals.juros|float)|replace('.', ',') }}</p>
-                        </div>
-                        <div class="col-md-3">
-                            <p>IOF: R$ {{ "%.2f"|format(totals.iof|float)|replace('.', ',') }}</p>
-                        </div>
-                        <div class="col-md-3">
-                            <p>Cartão: R$ {{ "%.2f"|format(totals.cartao|float)|replace('.', ',') }}</p>
-                        </div>
-                        <div class="col-md-3">
-                            <p>Compensação: R$ {{ "%.2f"|format(totals.compensacao|float)|replace('.', ',') }}</p>
-                        </div>
-                        <div class="col-md-3">
-                            <p>Aplicação: R$ {{ "%.2f"|format(totals.aplicacao|float)|replace('.', ',') }}</p>
-                        </div>
-                        <div class="col-md-3">
-                            <p>Cheque: R$ {{ "%.2f"|format(totals.cheque|float)|replace('.', ',') }}</p>
-                        </div>
-                        <div class="col-md-3">
-                            <p>Multa: R$ {{ "%.2f"|format(totals.multa|float)|replace('.', ',') }}</p>
-                        </div>
-                        <div class="col-md-3">
-                            <p>Cancelamento: R$ {{ "%.2f"|format(totals.cancelamento|float)|replace('.', ',') }}</p>
-                        </div>
+                        {% endfor %}
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Filtros -->
     <div class="row mb-3">
-        <div class="col-md-4">
+        <div class="col-md-12">
             <div class="btn-group" role="group" aria-label="Filtro de transações">
                 <a href="{{ url_for('enviados', tipo='todos', cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
-                   class="btn btn-outline-primary {% if tipo_filtro == 'todos' %}active{% endif %}">
-                    Todos
+                   class="btn btn-outline-primary {% if tipo_filtro == 'todos' %}active{% endif %}">Todos</a>
+                {% for tipo in ['PIX ENVIADO', 'TED ENVIADA', 'PAGAMENTO', 'JUROS', 'IOF', 'COMPRA CARTAO', 'COMPENSACAO', 'APLICACAO', 'CHEQUE EMITIDO/DEBITADO', 'MULTA', 'CANCELAMENTO RESGATE'] %}
+                <a href="{{ url_for('enviados', tipo=tipo, cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
+                   class="btn btn-outline-secondary {% if tipo_filtro == tipo %}active{% endif %}">
+                    {{ tipo|replace('_', ' ')|title }}
                 </a>
-                <a href="{{ url_for('enviados', tipo='PIX ENVIADO', cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
-                   class="btn btn-outline-success {% if tipo_filtro == 'PIX ENVIADO' %}active{% endif %}">
-                    PIX
-                </a>
-                <a href="{{ url_for('enviados', tipo='TED ENVIADA', cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
-                   class="btn btn-outline-info {% if tipo_filtro == 'TED ENVIADA' %}active{% endif %}">
-                    TED
-                </a>
-                <a href="{{ url_for('enviados', tipo='PAGAMENTO', cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
-                   class="btn btn-outline-warning {% if tipo_filtro == 'PAGAMENTO' %}active{% endif %}">
-                    Pagamentos
-                </a>
+                {% endfor %}
             </div>
         </div>
-        <div class="col-md-4">
+    </div>
+
+    <div class="row mb-3">
+        <div class="col-md-6">
             <div class="form-group">
                 <select class="form-select" id="cnpjFilter" onchange="filterByCNPJ(this.value)">
                     <option value="todos" {% if cnpj_filtro == 'todos' %}selected{% endif %}>Todos os CNPJs</option>
@@ -92,51 +60,51 @@
                 </select>
             </div>
         </div>
-        <div class="col-md-4">
+        <div class="col-md-6">
             <div class="row">
                 <div class="col-6">
-                    <div class="form-group">
-                        <input type="date" class="form-control" id="startDate" value="{{ start_date }}" onchange="filterByDate()">
-                    </div>
+                    <input type="date" class="form-control" id="startDate" value="{{ start_date }}" onchange="filterByDate()">
                 </div>
                 <div class="col-6">
-                    <div class="form-group">
-                        <input type="date" class="form-control" id="endDate" value="{{ end_date }}" onchange="filterByDate()">
-                    </div>
+                    <input type="date" class="form-control" id="endDate" value="{{ end_date }}" onchange="filterByDate()">
                 </div>
             </div>
         </div>
     </div>
 
-    <div class="row">
-        <div class="col">
-            <table class="table table-striped">
-                <thead>
-                    <tr>
-                        <th>Data</th>
-                        <th>Tipo</th>
-                        <th>Descrição</th>
-                        <th>Valor</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for transaction in transactions %}
-                    <tr>
-                        <td>{{ transaction.date }}</td>
-                        <td>
-                            <span class="badge {% if transaction.type == 'PIX ENVIADO' %}bg-success{% elif transaction.type == 'TED ENVIADA' %}bg-info{% else %}bg-warning{% endif %}">
-                                {{ transaction.type }}
-                            </span>
-                        </td>
-                        <td>{{ transaction.description }}</td>
-                        <td class="{% if transaction.value > 0 %}text-success{% else %}text-danger{% endif %}">
-                            R$ {{ "%.2f"|format(transaction.value|float)|replace('.', ',') }}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Data</th>
+                    <th>Tipo</th>
+                    <th>Descrição</th>
+                    <th class="text-end">Valor</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for transaction in transactions %}
+                <tr>
+                    <td>{{ transaction.date }}</td>
+                    <td>
+                        <span class="badge {% if transaction.type == 'PIX ENVIADO' %}bg-success
+                                         {% elif transaction.type == 'TED ENVIADA' %}bg-info
+                                         {% elif transaction.type == 'PAGAMENTO' %}bg-warning
+                                         {% elif transaction.type == 'JUROS' %}bg-danger
+                                         {% elif transaction.type == 'IOF' %}bg-danger
+                                         {% elif transaction.type == 'COMPRA CARTAO' %}bg-primary
+                                         {% else %}bg-secondary{% endif %}">
+                            {{ transaction.type }}
+                        </span>
+                    </td>
+                    <td>{{ transaction.description }}</td>
+                    <td class="text-end {% if transaction.value > 0 %}text-success{% else %}text-danger{% endif %}">
+                        R$ {{ "%.2f"|format(transaction.value|float)|replace('.', ',') }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </div>
 
@@ -144,15 +112,11 @@
 document.getElementById('retryButton')?.addEventListener('click', function() {
     this.disabled = true;
     this.textContent = 'Tentando...';
-    
     fetch('/retry_failed_cnpjs')
         .then(response => response.json())
         .then(data => {
-            if (data.success) {
-                location.reload();
-            } else {
-                alert('Erro ao tentar novamente. Por favor, recarregue a página.');
-            }
+            if (data.success) location.reload();
+            else alert('Erro ao tentar novamente. Por favor, recarregue a página.');
         })
         .catch(error => {
             console.error('Erro:', error);
@@ -167,13 +131,11 @@ function filterByCNPJ(cnpj) {
 }
 
 function filterByDate() {
+    const currentUrl = new URL(window.location.href);
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
-    const currentUrl = new URL(window.location.href);
-    
     if (startDate) currentUrl.searchParams.set('start_date', startDate);
     if (endDate) currentUrl.searchParams.set('end_date', endDate);
-    
     window.location.href = currentUrl.toString();
 }
 </script>
