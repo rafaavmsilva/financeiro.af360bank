@@ -618,7 +618,12 @@ def recebidos():
     query = '''
         SELECT date, description, value, type, document
         FROM transactions
-        WHERE type IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO')
+        WHERE type IN (
+            'PIX ENVIADO', 'TED ENVIADA', 'PAGAMENTO',
+            'JUROS', 'IOF', 'COMPRA CARTAO', 'COMPENSACAO',
+            'APLICACAO', 'CHEQUE EMITIDO/DEBITADO', 'MULTA',
+            'CANCELAMENTO RESGATE'
+        )
     '''
     
     # Add filters if necessary
@@ -644,9 +649,17 @@ def recebidos():
     
     transactions = []
     totals = {
-        'pix_recebido': 0,
-        'ted_recebida': 0,
-        'pagamento': 0
+        'pix_enviado': 0,
+        'ted_enviada': 0,
+        'pagamento': 0,
+        'juros': 0,
+        'iof': 0,
+        'cartao': 0,
+        'compensacao': 0,
+        'aplicacao': 0,
+        'cheque': 0,
+        'multa': 0,
+        'cancelamento': 0
     }
     
     for row in cursor.fetchall():
@@ -666,6 +679,23 @@ def recebidos():
             totals['ted_recebida'] += transaction['value']
         elif transaction['type'] == 'PAGAMENTO':
             totals['pagamento'] += abs(transaction['value'])
+        elif transaction['type'] == 'JUROS':
+            totals['juros'] += abs(transaction['value'])
+        elif transaction['type'] == 'IOF':
+            totals['iof'] += abs(transaction['value'])
+        elif transaction['type'] == 'COMPRA CARTAO':
+            totals['cartao'] += abs(transaction['value'])
+            transaction['description'] = f"CARTÃO {transaction['description']}"
+        elif transaction['type'] == 'COMPENSACAO':
+            totals['compensacao'] += abs(transaction['value'])
+        elif transaction['type'] == 'APLICACAO':
+            totals['aplicacao'] += abs(transaction['value'])
+        elif transaction['type'] == 'CHEQUE EMITIDO/DEBITADO':
+            totals['cheque'] += abs(transaction['value'])
+        elif transaction['type'] == 'MULTA':
+            totals['multa'] += abs(transaction['value'])
+        elif transaction['type'] == 'CANCELAMENTO RESGATE':
+            totals['cancelamento'] += abs(transaction['value'])
         
         # Get company name if CNPJ exists
         if transaction['document']:
