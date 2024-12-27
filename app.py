@@ -594,17 +594,18 @@ def recebidos():
     start_date = request.args.get('start_date', '')
     end_date = request.args.get('end_date', '')
     
-    # Get unique CNPJs and their company names for the filter dropdown
+    # Get unique CNPJs for received transactions
     cursor.execute('''
         SELECT DISTINCT document
         FROM transactions 
         WHERE document IS NOT NULL 
         AND type IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO')
+        AND (type != 'PAGAMENTO' OR description LIKE '%PAGAMENTO A%')
     ''')
     
     cnpjs = []
     for row in cursor.fetchall():
-        if row[0]:  # Only if document is not null
+        if row[0]:
             company_info = get_company_info(row[0])
             if company_info:
                 company_name = company_info.get('nome_fantasia') or company_info.get('razao_social', '')
@@ -614,19 +615,15 @@ def recebidos():
                         'name': f"{company_name} ({row[0]})"
                     })
     
-    # Base query for transactions
+    # Base query for received transactions
     query = '''
         SELECT date, description, value, type, document
         FROM transactions
-        WHERE type IN (
-            'PIX ENVIADO', 'TED ENVIADA', 'PAGAMENTO',
-            'JUROS', 'IOF', 'COMPRA CARTAO', 'COMPENSACAO',
-            'APLICACAO', 'CHEQUE EMITIDO/DEBITADO', 'MULTA',
-            'CANCELAMENTO RESGATE'
-        )
+        WHERE type IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO')
+        AND (type != 'PAGAMENTO' OR description LIKE '%PAGAMENTO A%')
     '''
     
-    # Add filters if necessary
+    # Add filters
     params = []
     if tipo_filtro != 'todos':
         query += " AND type = ?"
@@ -649,17 +646,9 @@ def recebidos():
     
     transactions = []
     totals = {
-        'pix_enviado': 0,
-        'ted_enviada': 0,
-        'pagamento': 0,
-        'juros': 0,
-        'iof': 0,
-        'cartao': 0,
-        'compensacao': 0,
-        'aplicacao': 0,
-        'cheque': 0,
-        'multa': 0,
-        'cancelamento': 0
+        'pix_recebido': 0.0,
+        'ted_recebida': 0.0,
+        'pagamento': 0.0
     }
     
     for row in cursor.fetchall():
@@ -679,23 +668,6 @@ def recebidos():
             totals['ted_recebida'] += transaction['value']
         elif transaction['type'] == 'PAGAMENTO':
             totals['pagamento'] += abs(transaction['value'])
-        elif transaction['type'] == 'JUROS':
-            totals['juros'] += abs(transaction['value'])
-        elif transaction['type'] == 'IOF':
-            totals['iof'] += abs(transaction['value'])
-        elif transaction['type'] == 'COMPRA CARTAO':
-            totals['cartao'] += abs(transaction['value'])
-            transaction['description'] = f"CARTÃO {transaction['description']}"
-        elif transaction['type'] == 'COMPENSACAO':
-            totals['compensacao'] += abs(transaction['value'])
-        elif transaction['type'] == 'APLICACAO':
-            totals['aplicacao'] += abs(transaction['value'])
-        elif transaction['type'] == 'CHEQUE EMITIDO/DEBITADO':
-            totals['cheque'] += abs(transaction['value'])
-        elif transaction['type'] == 'MULTA':
-            totals['multa'] += abs(transaction['value'])
-        elif transaction['type'] == 'CANCELAMENTO RESGATE':
-            totals['cancelamento'] += abs(transaction['value'])
         
         # Get company name if CNPJ exists
         if transaction['document']:
@@ -713,9 +685,7 @@ def recebidos():
                         transaction['description'] = f"TED RECEBIDA {company_name} ({cnpj_sem_zeros})"
                     transaction['has_company_info'] = True
         
-        # Only include "PAGAMENTO A" transactions
-        if transaction['type'] != 'PAGAMENTO' or 'PAGAMENTO A' in transaction['description']:
-            transactions.append(transaction)
+        transactions.append(transaction)
     
     conn.close()
     return render_template('recebidos.html', 
