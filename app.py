@@ -663,6 +663,10 @@ def enviados():
             'has_company_info': False
         }
         
+        # Exclude PAGAMENTO transactions with value > 0
+        if transaction['type'] == 'PAGAMENTO' and transaction['value'] > 0:
+            continue
+        
         # Update totals
         total_key = type_mapping.get(transaction['type'])
         if total_key:
