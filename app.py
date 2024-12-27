@@ -580,6 +580,120 @@ def recebidos():
                          cnpjs=cnpjs,
                          failed_cnpjs=len(failed_cnpjs))
 
+@app.route('/enviados')
+@login_required
+def enviados():
+    if not session.get('authenticated'):
+        return redirect('https://af360bank.onrender.com/login')
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Get filters
+    tipo_filtro = request.args.get('tipo', 'todos')
+    cnpj_filtro = request.args.get('cnpj', 'todos')
+    start_date = request.args.get('start_date', '')
+    end_date = request.args.get('end_date', '')
+
+    # Initialize totals dictionary
+    totals = {
+        'juros': 0.0,
+        'iof': 0.0,
+        'cartao': 0.0,
+        'compensacao': 0.0,
+        'aplicacao': 0.0,
+        'cheque': 0.0,
+        'multa': 0.0,
+        'cancelamento': 0.0,
+        'pix_enviado': 0.0,
+        'ted_enviada': 0.0,
+        'pagamento': 0.0
+    }
+
+    # Type mapping for totals
+    type_mapping = {
+        'JUROS': 'juros',
+        'IOF': 'iof',
+        'COMPRA CARTAO': 'cartao',
+        'COMPENSACAO': 'compensacao',
+        'APLICACAO': 'aplicacao',
+        'CHEQUE EMITIDO/DEBITADO': 'cheque',
+        'MULTA': 'multa',
+        'CANCELAMENTO RESGATE': 'cancelamento',
+        'PIX ENVIADO': 'pix_enviado',
+        'TED ENVIADA': 'ted_enviada',
+        'PAGAMENTO': 'pagamento'
+    }
+
+    # Base query
+    query = '''
+        SELECT date, description, value, type, document
+        FROM transactions
+        WHERE type IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    '''
+    params = list(type_mapping.keys())
+
+    # Add filters
+    if tipo_filtro != 'todos':
+        query += " AND type = ?"
+        params.append(tipo_filtro)
+    
+    if cnpj_filtro != 'todos':
+        query += " AND document = ?"
+        params.append(cnpj_filtro)
+    
+    if start_date:
+        query += " AND date >= ?"
+        params.append(start_date)
+    
+    if end_date:
+        query += " AND date <= ?"
+        params.append(end_date)
+    
+    query += " ORDER BY date DESC"
+    cursor.execute(query, params)
+    
+    transactions = []
+    for row in cursor.fetchall():
+        transaction = {
+            'date': row[0],
+            'description': row[1],
+            'value': float(row[2]),
+            'type': row[3],
+            'document': row[4],
+            'has_company_info': False
+        }
+        
+        # Update totals
+        total_key = type_mapping.get(transaction['type'])
+        if total_key:
+            totals[total_key] += abs(transaction['value'])
+
+        # Format description for CARTAO
+        if transaction['type'] == 'COMPRA CARTAO':
+            transaction['description'] = f"CARTÃO {transaction['description']}"
+        
+        # Get company info
+        if transaction['document']:
+            company_info = get_company_info(transaction['document'])
+            if company_info:
+                company_name = company_info.get('nome_fantasia') or company_info.get('razao_social', '')
+                if company_name:
+                    cnpj_sem_zeros = str(int(transaction['document']))
+                    transaction['description'] = f"{transaction['type']} {company_name} ({cnpj_sem_zeros})"
+                    transaction['has_company_info'] = True
+        
+        transactions.append(transaction)
+    
+    conn.close()
+    return render_template('enviados.html',
+                         transactions=transactions,
+                         totals=totals,
+                         tipo_filtro=tipo_filtro,
+                         cnpj_filtro=cnpj_filtro,
+                         start_date=start_date,
+                         end_date=end_date,
+                         failed_cnpjs=len(failed_cnpjs))
+
 @app.route('/retry-failed-cnpjs')
 @login_required
 def retry_failed_cnpjs():
