@@ -28,6 +28,30 @@
                         <div class="col-md-4">
                             <p>Total Pagamentos: R$ {{ "%.2f"|format(totals.pagamento|float)|replace('.', ',') }}</p>
                         </div>
+                        <div class="col-md-3">
+                            <p>Juros: R$ {{ "%.2f"|format(totals.juros|float)|replace('.', ',') }}</p>
+                        </div>
+                        <div class="col-md-3">
+                            <p>IOF: R$ {{ "%.2f"|format(totals.iof|float)|replace('.', ',') }}</p>
+                        </div>
+                        <div class="col-md-3">
+                            <p>Cartão: R$ {{ "%.2f"|format(totals.cartao|float)|replace('.', ',') }}</p>
+                        </div>
+                        <div class="col-md-3">
+                            <p>Compensação: R$ {{ "%.2f"|format(totals.compensacao|float)|replace('.', ',') }}</p>
+                        </div>
+                        <div class="col-md-3">
+                            <p>Aplicação: R$ {{ "%.2f"|format(totals.aplicacao|float)|replace('.', ',') }}</p>
+                        </div>
+                        <div class="col-md-3">
+                            <p>Cheque: R$ {{ "%.2f"|format(totals.cheque|float)|replace('.', ',') }}</p>
+                        </div>
+                        <div class="col-md-3">
+                            <p>Multa: R$ {{ "%.2f"|format(totals.multa|float)|replace('.', ',') }}</p>
+                        </div>
+                        <div class="col-md-3">
+                            <p>Cancelamento: R$ {{ "%.2f"|format(totals.cancelamento|float)|replace('.', ',') }}</p>
+                        </div>
                     </div>
                 </div>
             </div>
