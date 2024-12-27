@@ -463,11 +463,122 @@ def health_check():
     })
 
 @app.route('/enviados')
+@login_required
 def enviados():
+    if not session.get('authenticated'):
+        return redirect('https://af360bank.onrender.com/login')
     conn = get_db_connection()
-    enviados = conn.execute('SELECT * FROM transactions WHERE tipo = "Pagamento de"').fetchall()
+    cursor = conn.cursor()
+    
+    # Get filters from query string
+    tipo_filtro = request.args.get('tipo', 'todos')
+    cnpj_filtro = request.args.get('cnpj', 'todos')
+    start_date = request.args.get('start_date', '')
+    end_date = request.args.get('end_date', '')
+    
+    # Get unique CNPJs and their company names for the filter dropdown
+    cursor.execute('''
+        SELECT DISTINCT document
+        FROM transactions 
+        WHERE document IS NOT NULL 
+        AND type IN ('PIX ENVIADO', 'TED ENVIADA', 'PAGAMENTO')
+    ''')
+    
+    cnpjs = []
+    for row in cursor.fetchall():
+        if row[0]:  # Only if document is not null
+            company_info = get_company_info(row[0])
+            if company_info:
+                company_name = company_info.get('nome_fantasia') or company_info.get('razao_social', '')
+                if company_name:
+                    cnpjs.append({
+                        'cnpj': row[0],
+                        'name': f"{company_name} ({row[0]})"
+                    })
+    
+    # Base query for transactions
+    query = '''
+        SELECT date, description, value, type, document
+        FROM transactions
+        WHERE type IN ('PIX ENVIADO', 'TED ENVIADA', 'PAGAMENTO')
+    '''
+    
+    # Add filters if necessary
+    params = []
+    if tipo_filtro != 'todos':
+        query += " AND type = ?"
+        params.append(tipo_filtro)
+    
+    if cnpj_filtro != 'todos':
+        query += " AND document = ?"
+        params.append(cnpj_filtro)
+    
+    if start_date:
+        query += " AND date >= ?"
+        params.append(start_date)
+    
+    if end_date:
+        query += " AND date <= ?"
+        params.append(end_date)
+    
+    query += " ORDER BY date DESC"
+    cursor.execute(query, params)
+    
+    transactions = []
+    totals = {
+        'pix_enviado': 0,
+        'ted_enviada': 0,
+        'pagamento': 0
+    }
+    
+    for row in cursor.fetchall():
+        transaction = {
+            'date': row[0],
+            'description': row[1],
+            'value': float(row[2]),
+            'type': row[3],
+            'document': row[4],
+            'has_company_info': False
+        }
+        
+        # Add to corresponding total
+        if transaction['type'] == 'PIX ENVIADO':
+            totals['pix_enviado'] += transaction['value']
+        elif transaction['type'] == 'TED ENVIADA':
+            totals['ted_enviada'] += transaction['value']
+        elif transaction['type'] == 'PAGAMENTO':
+            totals['pagamento'] += abs(transaction['value'])
+        
+        # Get company name if CNPJ exists
+        if transaction['document']:
+            company_info = get_company_info(transaction['document'])
+            if company_info:
+                company_name = company_info.get('nome_fantasia') or company_info.get('razao_social', '')
+                if company_name:
+                    cnpj_sem_zeros = str(int(transaction['document']))
+                    
+                    if transaction['type'] == 'PAGAMENTO' and 'PAGAMENTO DE' in transaction['description']:
+                        transaction['description'] = f"PAGAMENTO DE FORNECEDORES {company_name} ({cnpj_sem_zeros})"
+                    elif transaction['type'] == 'PIX ENVIADO':
+                        transaction['description'] = f"PIX ENVIADO {company_name} ({cnpj_sem_zeros})"
+                    elif transaction['type'] == 'TED ENVIADA':
+                        transaction['description'] = f"TED ENVIADA {company_name} ({cnpj_sem_zeros})"
+                    transaction['has_company_info'] = True
+        
+        # Only include "PAGAMENTO DE" transactions
+        if transaction['type'] != 'PAGAMENTO' or 'PAGAMENTO DE' in transaction['description']:
+            transactions.append(transaction)
+    
     conn.close()
-    return render_template('enviados.html', enviados=enviados)
+    return render_template('enviados.html', 
+                         transactions=transactions, 
+                         totals=totals, 
+                         tipo_filtro=tipo_filtro,
+                         cnpj_filtro=cnpj_filtro,
+                         start_date=start_date,
+                         end_date=end_date,
+                         cnpjs=cnpjs,
+                         failed_cnpjs=len(failed_cnpjs))
 
 @app.route('/recebidos')
 @login_required
