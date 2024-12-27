@@ -462,59 +462,51 @@ def health_check():
         'app_name': os.getenv('APP_NAME')
     })
 
-@app.route('/enviados')
+app.route('/recebidos')
 @login_required
-def enviados():
+def recebidos():
     if not session.get('authenticated'):
         return redirect('https://af360bank.onrender.com/login')
     conn = get_db_connection()
     cursor = conn.cursor()
-
-    # Get filters
+    
+    # Get filters from query string
     tipo_filtro = request.args.get('tipo', 'todos')
     cnpj_filtro = request.args.get('cnpj', 'todos')
     start_date = request.args.get('start_date', '')
     end_date = request.args.get('end_date', '')
-
-    # Initialize totals dictionary
-    totals = {
-        'juros': 0.0,
-        'iof': 0.0,
-        'cartao': 0.0,
-        'compensacao': 0.0,
-        'aplicacao': 0.0,
-        'cheque': 0.0,
-        'multa': 0.0,
-        'cancelamento': 0.0,
-        'pix_enviado': 0.0,
-        'ted_enviada': 0.0,
-        'pagamento': 0.0
-    }
-
-    # Type mapping for totals
-    type_mapping = {
-        'JUROS': 'juros',
-        'IOF': 'iof',
-        'COMPRA CARTAO': 'cartao',
-        'COMPENSACAO': 'compensacao',
-        'APLICACAO': 'aplicacao',
-        'CHEQUE EMITIDO/DEBITADO': 'cheque',
-        'MULTA': 'multa',
-        'CANCELAMENTO RESGATE': 'cancelamento',
-        'PIX ENVIADO': 'pix_enviado',
-        'TED ENVIADA': 'ted_enviada',
-        'PAGAMENTO': 'pagamento'
-    }
-
-    # Base query
+    
+    # Get unique CNPJs for received transactions
+    cursor.execute('''
+        SELECT DISTINCT document
+        FROM transactions 
+        WHERE document IS NOT NULL 
+        AND type IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO')
+        AND (type != 'PAGAMENTO' OR description LIKE '%PAGAMENTO A%')
+    ''')
+    
+    cnpjs = []
+    for row in cursor.fetchall():
+        if row[0]:
+            company_info = get_company_info(row[0])
+            if company_info:
+                company_name = company_info.get('nome_fantasia') or company_info.get('razao_social', '')
+                if company_name:
+                    cnpjs.append({
+                        'cnpj': row[0],
+                        'name': f"{company_name} ({row[0]})"
+                    })
+    
+    # Base query for received transactions
     query = '''
         SELECT date, description, value, type, document
         FROM transactions
-        WHERE type IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        WHERE type IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO')
+        AND (type != 'PAGAMENTO' OR description LIKE '%PAGAMENTO A%')
     '''
-    params = list(type_mapping.keys())
-
-    # Add filters
+    
+    # Add filters if necessary
+    params = []
     if tipo_filtro != 'todos':
         query += " AND type = ?"
         params.append(tipo_filtro)
@@ -535,6 +527,12 @@ def enviados():
     cursor.execute(query, params)
     
     transactions = []
+    totals = {
+        'pix_recebido': 0.0,
+        'ted_recebida': 0.0,
+        'pagamento': 0.0
+    }
+    
     for row in cursor.fetchall():
         transaction = {
             'date': row[0],
@@ -545,35 +543,41 @@ def enviados():
             'has_company_info': False
         }
         
-        # Update totals
-        total_key = type_mapping.get(transaction['type'])
-        if total_key:
-            totals[total_key] += abs(transaction['value'])
-
-        # Format description for CARTAO
-        if transaction['type'] == 'COMPRA CARTAO':
-            transaction['description'] = f"CARTÃO {transaction['description']}"
+        # Add to corresponding total
+        if transaction['type'] == 'PIX RECEBIDO':
+            totals['pix_recebido'] += transaction['value']
+        elif transaction['type'] == 'TED RECEBIDA':
+            totals['ted_recebida'] += transaction['value']
+        elif transaction['type'] == 'PAGAMENTO':
+            totals['pagamento'] += abs(transaction['value'])
         
-        # Get company info
+        # Get company name if CNPJ exists
         if transaction['document']:
             company_info = get_company_info(transaction['document'])
             if company_info:
                 company_name = company_info.get('nome_fantasia') or company_info.get('razao_social', '')
                 if company_name:
                     cnpj_sem_zeros = str(int(transaction['document']))
-                    transaction['description'] = f"{transaction['type']} {company_name} ({cnpj_sem_zeros})"
+                    
+                    if transaction['type'] == 'PAGAMENTO' and 'PAGAMENTO A' in transaction['description']:
+                        transaction['description'] = f"PAGAMENTO A FORNECEDORES {company_name} ({cnpj_sem_zeros})"
+                    elif transaction['type'] == 'PIX RECEBIDO':
+                        transaction['description'] = f"PIX RECEBIDO {company_name} ({cnpj_sem_zeros})"
+                    elif transaction['type'] == 'TED RECEBIDA':
+                        transaction['description'] = f"TED RECEBIDA {company_name} ({cnpj_sem_zeros})"
                     transaction['has_company_info'] = True
         
         transactions.append(transaction)
     
     conn.close()
-    return render_template('enviados.html',
-                         transactions=transactions,
-                         totals=totals,
+    return render_template('recebidos.html', 
+                         transactions=transactions, 
+                         totals=totals, 
                          tipo_filtro=tipo_filtro,
                          cnpj_filtro=cnpj_filtro,
                          start_date=start_date,
                          end_date=end_date,
+                         cnpjs=cnpjs,
                          failed_cnpjs=len(failed_cnpjs))
 
 @app.route('/retry-failed-cnpjs')
