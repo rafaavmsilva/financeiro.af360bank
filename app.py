@@ -470,6 +470,9 @@ def recebidos():
     conn = get_db_connection()
     cursor = conn.cursor()
     
+    # Initialize lists
+    recebidos = []
+
     # Get filters from query string
     tipo_filtro = request.args.get('tipo', 'todos')
     cnpj_filtro = request.args.get('cnpj', 'todos')
@@ -480,7 +483,7 @@ def recebidos():
     cursor.execute('''
         SELECT DISTINCT document
         FROM transactions 
-        WHERE document IS NOT NULL 
+        WHERE document IS NOT NULL
         AND type IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO')
         AND (type != 'PAGAMENTO' OR description LIKE '%PAGAMENTO A%')
     ''')
@@ -567,11 +570,11 @@ def recebidos():
                         transaction['description'] = f"TED RECEBIDA {company_name} ({cnpj_sem_zeros})"
                     transaction['has_company_info'] = True
         
-        transactions.append(transaction)
+        recebidos.append(transaction)
     
     conn.close()
     return render_template('recebidos.html', 
-                         transactions=transactions, 
+                         transactions=recebidos, 
                          totals=totals, 
                          tipo_filtro=tipo_filtro,
                          cnpj_filtro=cnpj_filtro,
@@ -587,6 +590,9 @@ def enviados():
         return redirect('https://af360bank.onrender.com/login')
     conn = get_db_connection()
     cursor = conn.cursor()
+
+    # Initialize lists
+    enviados = []
 
     # Get filters
     tipo_filtro = request.args.get('tipo', 'todos')
@@ -686,11 +692,11 @@ def enviados():
                     transaction['description'] = f"{transaction['type']} {company_name} ({cnpj_sem_zeros})"
                     transaction['has_company_info'] = True
         
-        transactions.append(transaction)
+        enviados.append(transaction)
     
     conn.close()
     return render_template('enviados.html',
-                         transactions=transactions,
+                         transactions=enviados,
                          totals=totals,
                          tipo_filtro=tipo_filtro,
                          cnpj_filtro=cnpj_filtro,
