@@ -484,7 +484,7 @@ def recebidos():
         SELECT DISTINCT document
         FROM transactions 
         WHERE document IS NOT NULL
-        AND type IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO')
+        AND type IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO', 'CHEQUE DEVOLVIDO')
         AND (type != 'PAGAMENTO' OR description LIKE '%PAGAMENTO A%')
     ''')
     
@@ -504,7 +504,7 @@ def recebidos():
     query = '''
         SELECT date, description, value, type, document
         FROM transactions
-        WHERE type IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO')
+        WHERE type IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO', 'CHEQUE DEVOLVIDO')
         AND (type != 'PAGAMENTO' OR description LIKE '%PAGAMENTO A%')
     '''
     
@@ -533,7 +533,8 @@ def recebidos():
     totals = {
         'pix_recebido': 0.0,
         'ted_recebida': 0.0,
-        'pagamento': 0.0
+        'pagamento': 0.0,
+        'cheque_devolvido': 0.0
     }
     
     for row in cursor.fetchall():
@@ -553,6 +554,8 @@ def recebidos():
             totals['ted_recebida'] += transaction['value']
         elif transaction['type'] == 'PAGAMENTO':
             totals['pagamento'] += abs(transaction['value'])
+        elif transaction['type'] == 'CHEQUE DEVOLVIDO':
+            totals['cheque_devolvido'] += transaction['value']
         
         # Get company name if CNPJ exists
         if transaction['document']:
@@ -568,6 +571,8 @@ def recebidos():
                         transaction['description'] = f"PIX RECEBIDO {company_name} ({cnpj_sem_zeros})"
                     elif transaction['type'] == 'TED RECEBIDA':
                         transaction['description'] = f"TED RECEBIDA {company_name} ({cnpj_sem_zeros})"
+                    elif transaction['type'] == 'CHEQUE DEVOLVIDO':
+                        transaction['description'] = f"CHEQUE DEVOLVIDO {company_name} ({cnpj_sem_zeros})"
                     transaction['has_company_info'] = True
         
         recebidos.append(transaction)
