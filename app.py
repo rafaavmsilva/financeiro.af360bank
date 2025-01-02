@@ -490,7 +490,7 @@ def recebidos():
     
     cnpjs = []
     for row in cursor.fetchall():
-        if row[0]:
+        if (row[0]):
             company_info = get_company_info(row[0])
             if company_info:
                 company_name = company_info.get('nome_fantasia') or company_info.get('razao_social', '')
