@@ -822,9 +822,12 @@ def transactions_summary():
                          active_page='transactions_summary',
                          summary=summary)
 
-@app.route('/verify-cnpj', methods=['POST'])
+@app.route('/verify-cnpj', methods=['GET', 'POST'])
 @login_required
 def cnpj_verification():
+    if request.method == 'POST':
+        cnpj = request.form.get('cnpj')
+        return redirect(url_for('verify_cnpj', cnpj=cnpj))
     return render_template('cnpj_verification.html')
 
 @app.route('/verify-cnpj/<cnpj>')
