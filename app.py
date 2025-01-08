@@ -844,6 +844,7 @@ def verify_cnpj(cnpj):
             })
     except Exception as e:
         print(f"Erro ao verificar CNPJ {cnpj}: {e}")
+        return jsonify({'valid': False, 'error': str(e), 'cnpj': cnpj})
     
     return jsonify({'valid': False, 'cnpj': cnpj})
 
