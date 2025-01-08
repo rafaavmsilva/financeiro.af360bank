@@ -79,21 +79,21 @@ function consultarCNPJ() {
 
     error.style.display = 'none';
     
-    fetch(`/verify_cnpj/${cnpj}`)
+    fetch(`/verify-cnpj/${cnpj}`)
         .then(response => response.json())
         .then(data => {
-            if (data.success) {
-                document.getElementById('razaoSocial').textContent = data.data.razao_social;
-                document.getElementById('nomeFantasia').textContent = data.data.nome_fantasia;
-                document.getElementById('cnpjResult').textContent = data.data.cnpj;
-                document.getElementById('situacaoCadastral').textContent = data.data.descricao_situacao_cadastral;
-                document.getElementById('dataInicio').textContent = data.data.data_inicio_atividade;
-                document.getElementById('cep').textContent = data.data.cep;
+            if (data.valid) {
+                document.getElementById('razaoSocial').textContent = data.company_name;
+                document.getElementById('nomeFantasia').textContent = data.company_name;
+                document.getElementById('cnpjResult').textContent = data.cnpj;
+                document.getElementById('situacaoCadastral').textContent = data.situacao_cadastral;
+                document.getElementById('dataInicio').textContent = data.data_inicio_atividade;
+                document.getElementById('cep').textContent = data.cep;
                 
                 resultado.style.display = 'block';
                 error.style.display = 'none';
             } else {
-                throw new Error(data.message);
+                throw new Error(data.error || 'Erro ao consultar CNPJ.');
             }
         })
         .catch(err => {
