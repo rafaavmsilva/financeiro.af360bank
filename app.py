@@ -627,7 +627,7 @@ def enviados():
         'COMPRA CARTAO': 'cartao',
         'COMPENSACAO': 'compensacao',
         'APLICACAO': 'aplicacao',
-        'CHEQUE EMITIDO/DEBITADO': 'cheque',
+        'CHEQUE EMITIDO/DEBITADO': 'cheque',  # Certifique-se de que esta linha está presente
         'MULTA': 'multa',
         'CANCELAMENTO RESGATE': 'cancelamento',
         'PIX ENVIADO': 'pix_enviado',
@@ -639,7 +639,7 @@ def enviados():
     query = '''
         SELECT date, description, value, type, document
         FROM transactions
-        WHERE type IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        WHERE type IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     '''
     params = list(type_mapping.keys())
 
@@ -647,37 +647,37 @@ def enviados():
     if tipo_filtro != 'todos':
         query += " AND type = ?"
         params.append(tipo_filtro)
-    
+
     if cnpj_filtro != 'todos':
         query += " AND document = ?"
         params.append(cnpj_filtro)
-    
+
     if start_date:
         query += " AND date >= ?"
         params.append(start_date)
-    
+
     if end_date:
         query += " AND date <= ?"
         params.append(end_date)
-    
+
     query += " ORDER BY date DESC"
     cursor.execute(query, params)
-    
+
     transactions = []
     for row in cursor.fetchall():
         transaction = {
             'date': row[0],
             'description': row[1],
-            'value': float(row[2]),
+            'value': row[2],
             'type': row[3],
             'document': row[4],
             'has_company_info': False
         }
-        
+
         # Exclude PAGAMENTO transactions with value > 0
         if transaction['type'] == 'PAGAMENTO' and transaction['value'] > 0:
             continue
-        
+
         # Update totals
         total_key = type_mapping.get(transaction['type'])
         if total_key:
@@ -686,7 +686,7 @@ def enviados():
         # Format description for CARTAO
         if transaction['type'] == 'COMPRA CARTAO':
             transaction['description'] = f"CARTÃO {transaction['description']}"
-        
+
         # Get company info
         if transaction['document']:
             company_info = get_company_info(transaction['document'])
@@ -696,18 +696,18 @@ def enviados():
                     cnpj_sem_zeros = str(int(transaction['document']))
                     transaction['description'] = f"{transaction['type']} {company_name} ({cnpj_sem_zeros})"
                     transaction['has_company_info'] = True
-        
+
         enviados.append(transaction)
-    
+
     conn.close()
     return render_template('enviados.html',
-                         transactions=enviados,
-                         totals=totals,
-                         tipo_filtro=tipo_filtro,
-                         cnpj_filtro=cnpj_filtro,
-                         start_date=start_date,
-                         end_date=end_date,
-                         failed_cnpjs=len(failed_cnpjs))
+                        transactions=enviados,
+                        totals=totals,
+                        tipo_filtro=tipo_filtro,
+                        cnpj_filtro=cnpj_filtro,
+                        start_date=start_date,
+                        end_date=end_date,
+                        failed_cnpjs=len(failed_cnpjs))
 
 @app.route('/retry-failed-cnpjs')
 @login_required
