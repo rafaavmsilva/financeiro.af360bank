@@ -627,12 +627,13 @@ def enviados():
         'COMPRA CARTAO': 'cartao',
         'COMPENSACAO': 'compensacao',
         'APLICACAO': 'aplicacao',
-        'CHEQUE EMITIDO/DEBITADO': 'cheque',  # Certifique-se de que esta linha está presente
+        'CHEQUE EMITIDO/DEBITADO': 'cheque',
         'MULTA': 'multa',
         'CANCELAMENTO RESGATE': 'cancelamento',
         'PIX ENVIADO': 'pix_enviado',
         'TED ENVIADA': 'ted_enviada',
-        'PAGAMENTO': 'pagamento'
+        'PAGAMENTO': 'pagamento',
+        'CHEQUE': 'cheque'  # Adicione esta linha para garantir que há 12 tipos
     }
 
     # Base query
