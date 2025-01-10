@@ -568,6 +568,10 @@ def recebidos():
 
         recebidos.append(transaction)
 
+    # Define cnpjs variable
+    cursor.execute('SELECT DISTINCT document, nome_fantasia FROM companies')
+    cnpjs = [{'cnpj': row[0], 'name': row[1]} for row in cursor.fetchall()]
+
     conn.close()
     return render_template('recebidos.html',
                            transactions=recebidos,
