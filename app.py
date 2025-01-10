@@ -481,8 +481,6 @@ def recebidos():
     if not session.get('authenticated'):
         return redirect('https://af360bank.onrender.com/login')
     
-    create_companies_table()  # Certifique-se de que a tabela companies exista
-    
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -526,8 +524,12 @@ def recebidos():
 
     # Add filters
     if tipo_filtro != 'todos':
-        query += " AND type = ?"
-        params.append(tipo_filtro)
+        if tipo_filtro == 'DIVERSOS':
+            query += " AND type NOT IN ({})".format(','.join(['?'] * len(type_mapping)))
+            params.extend(type_mapping.keys())
+        else:
+            query += " AND type = ?"
+            params.append(tipo_filtro)
 
     if cnpj_filtro != 'todos':
         query += " AND document = ?"
