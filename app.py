@@ -634,14 +634,17 @@ def enviados():
         'TED ENVIADA': 'ted_enviada',
         'PAGAMENTO': 'pagamento',
         'CHEQUE': 'cheque',
-        'COMPRA': 'compra'
+        'COMPRA': 'compra',
+        'RESGATE': 'diversos',  # Mapeia RESGATE para diversos
+        'TRANSFERENCIA': 'diversos',  # Mapeia TRANSFERENCIA para diversos
+        'CREDITO': 'diversos'  # Mapeia CREDITO para diversos
     }
 
     # Base query
     query = '''
         SELECT date, description, value, type, document
         FROM transactions
-        WHERE type IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        WHERE type IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     '''
     params = list(type_mapping.keys())
 
