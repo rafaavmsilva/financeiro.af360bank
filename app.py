@@ -609,7 +609,7 @@ def enviados():
     totals = {
         'juros': 0.0,
         'iof': 0.0,
-        'cartao': 0.0,
+        'compra_cartao': 0.0,
         'compensacao': 0.0,
         'aplicacao': 0.0,
         'cheque': 0.0,
@@ -618,14 +618,13 @@ def enviados():
         'pix_enviado': 0.0,
         'ted_enviada': 0.0,
         'pagamento': 0.0,
-        'compra': 0.0  # Adicione esta linha para garantir que o tipo "COMPRA" seja mapeado
     }
 
     # Type mapping for totals
     type_mapping = {
         'JUROS': 'juros',
         'IOF': 'iof',
-        'COMPRA CARTAO': 'cartao',
+        'COMPRA CARTAO': 'compra_cartao',
         'COMPENSACAO': 'compensacao',
         'APLICACAO': 'aplicacao',
         'CHEQUE EMITIDO/DEBITADO': 'cheque',
@@ -635,7 +634,6 @@ def enviados():
         'TED ENVIADA': 'ted_enviada',
         'PAGAMENTO': 'pagamento',
         'CHEQUE': 'cheque',
-        'COMPRA': 'compra'  # Adicione esta linha para garantir que o tipo "COMPRA" seja mapeado
     }
 
     # Base query
