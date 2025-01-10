@@ -614,11 +614,11 @@ def enviados():
         'aplicacao': 0.0,
         'cheque': 0.0,
         'multa': 0.0,
-        'cancelamento': 0.0,
         'pix_enviado': 0.0,
         'ted_enviada': 0.0,
         'pagamento': 0.0,
-        'compra': 0.0
+        'compra': 0.0,
+        'diversos': 0.0  # Adicione esta linha para garantir que o tipo "DIVERSOS" seja mapeado
     }
 
     # Type mapping for totals
@@ -630,7 +630,6 @@ def enviados():
         'APLICACAO': 'aplicacao',
         'CHEQUE EMITIDO/DEBITADO': 'cheque',
         'MULTA': 'multa',
-        'CANCELAMENTO RESGATE': 'cancelamento',
         'PIX ENVIADO': 'pix_enviado',
         'TED ENVIADA': 'ted_enviada',
         'PAGAMENTO': 'pagamento',
@@ -642,7 +641,7 @@ def enviados():
     query = '''
         SELECT date, description, value, type, document
         FROM transactions
-        WHERE type IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        WHERE type IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     '''
     params = list(type_mapping.keys())
 
@@ -682,9 +681,8 @@ def enviados():
             continue
 
         # Update totals
-        total_key = type_mapping.get(transaction['type'])
-        if total_key:
-            totals[total_key] += abs(transaction['value'])
+        total_key = type_mapping.get(transaction['type'], 'diversos')  # Default to 'diversos' if type not found
+        totals[total_key] += abs(transaction['value'])
 
         # Format description and type for CARTAO
         if transaction['type'] == 'COMPRA CARTAO':
@@ -705,13 +703,13 @@ def enviados():
 
     conn.close()
     return render_template('enviados.html',
-                           transactions=enviados,
-                           totals=totals,
-                           tipo_filtro=tipo_filtro,
-                           cnpj_filtro=cnpj_filtro,
-                           start_date=start_date,
-                           end_date=end_date,
-                           failed_cnpjs=len(failed_cnpjs))
+                        transactions=enviados,
+                        totals=totals,
+                        tipo_filtro=tipo_filtro,
+                        cnpj_filtro=cnpj_filtro,
+                        start_date=start_date,
+                        end_date=end_date,
+                        failed_cnpjs=len(failed_cnpjs))
 
 @app.route('/retry-failed-cnpjs')
 @login_required
