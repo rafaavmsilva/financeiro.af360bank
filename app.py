@@ -481,6 +481,8 @@ def recebidos():
     if not session.get('authenticated'):
         return redirect('https://af360bank.onrender.com/login')
     
+    create_companies_table()  # Certifique-se de que a tabela companies exista
+    
     conn = get_db_connection()
     cursor = conn.cursor()
 
