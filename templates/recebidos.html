@@ -53,6 +53,10 @@
                    class="btn btn-outline-warning {% if tipo_filtro == 'PAGAMENTO' %}active{% endif %}">
                     Pagamentos
                 </a>
+                <a href="{{ url_for('recebidos', tipo='DIVERSOS', cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
+                   class="btn btn-outline-secondary {% if tipo_filtro == 'DIVERSOS' %}active{% endif %}">
+                    Diversos
+                </a>
             </div>
         </div>
         <div class="col-md-4">
