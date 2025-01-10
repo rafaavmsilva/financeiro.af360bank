@@ -679,12 +679,8 @@ def enviados():
             'has_company_info': False
         }
 
-        # Exclude PAGAMENTO transactions with value > 0
-        if transaction['type'] == 'PAGAMENTO' and transaction['value'] > 0:
-            continue
-
-        # Exclude CHEQUE transactions with value > 0
-        if transaction['type'] == 'CHEQUE' and transaction['value'] > 0:
+        # Exclude transactions with value > 0
+        if transaction['value'] > 0:
             continue
 
         # Update totals
