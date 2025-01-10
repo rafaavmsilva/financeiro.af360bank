@@ -680,6 +680,10 @@ def enviados():
         if transaction['type'] == 'PAGAMENTO' and transaction['value'] > 0:
             continue
 
+        # Exclude CHEQUE transactions with value > 0
+        if transaction['type'] == 'CHEQUE' and transaction['value'] > 0:
+            continue
+
         # Update totals
         total_key = type_mapping.get(transaction['type'], 'diversos')  # Default to 'diversos' if type not found
         totals[total_key] += abs(transaction['value'])
@@ -703,13 +707,13 @@ def enviados():
 
     conn.close()
     return render_template('enviados.html',
-                        transactions=enviados,
-                        totals=totals,
-                        tipo_filtro=tipo_filtro,
-                        cnpj_filtro=cnpj_filtro,
-                        start_date=start_date,
-                        end_date=end_date,
-                        failed_cnpjs=len(failed_cnpjs))
+                           transactions=enviados,
+                           totals=totals,
+                           tipo_filtro=tipo_filtro,
+                           cnpj_filtro=cnpj_filtro,
+                           start_date=start_date,
+                           end_date=end_date,
+                           failed_cnpjs=len(failed_cnpjs))
 
 @app.route('/retry-failed-cnpjs')
 @login_required
