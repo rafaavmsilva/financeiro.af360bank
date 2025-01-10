@@ -462,7 +462,7 @@ def health_check():
         'app_name': os.getenv('APP_NAME')
     })
 
-app.route('/recebidos')
+@app.route('/recebidos')
 @login_required
 def recebidos():
     if not session.get('authenticated'):
