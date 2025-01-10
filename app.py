@@ -609,7 +609,7 @@ def enviados():
     totals = {
         'juros': 0.0,
         'iof': 0.0,
-        'compra_cartao': 0.0,
+        'cartao': 0.0,  # Alterado para "cartao"
         'compensacao': 0.0,
         'aplicacao': 0.0,
         'cheque': 0.0,
@@ -625,7 +625,7 @@ def enviados():
     type_mapping = {
         'JUROS': 'juros',
         'IOF': 'iof',
-        'COMPRA CARTAO': 'compra_cartao',
+        'COMPRA CARTAO': 'cartao',  # Alterado para "cartao"
         'COMPENSACAO': 'compensacao',
         'APLICACAO': 'aplicacao',
         'CHEQUE EMITIDO/DEBITADO': 'cheque',
@@ -686,7 +686,7 @@ def enviados():
         if total_key:
             totals[total_key] += abs(transaction['value'])
 
-        # Format description for COMPRA CARTAO
+        # Format description for CARTAO
         if transaction['type'] == 'COMPRA CARTAO':
             transaction['description'] = f"CARTÃO {transaction['description']}"
 
@@ -704,13 +704,13 @@ def enviados():
 
     conn.close()
     return render_template('enviados.html',
-                        transactions=enviados,
-                        totals=totals,
-                        tipo_filtro=tipo_filtro,
-                        cnpj_filtro=cnpj_filtro,
-                        start_date=start_date,
-                        end_date=end_date,
-                        failed_cnpjs=len(failed_cnpjs))
+                     transactions=enviados,
+                     totals=totals,
+                     tipo_filtro=tipo_filtro,
+                     cnpj_filtro=cnpj_filtro,
+                     start_date=start_date,
+                     end_date=end_date,
+                     failed_cnpjs=len(failed_cnpjs))
 
 @app.route('/retry-failed-cnpjs')
 @login_required
