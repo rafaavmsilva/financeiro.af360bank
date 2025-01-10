@@ -686,9 +686,10 @@ def enviados():
         if total_key:
             totals[total_key] += abs(transaction['value'])
 
-        # Format description for CARTAO
+        # Format description and type for CARTAO
         if transaction['type'] == 'COMPRA CARTAO':
             transaction['description'] = f"CARTÃO {transaction['description']}"
+            transaction['type'] = 'CARTAO'  # Change type to CARTAO
 
         # Get company info
         if transaction['document']:
@@ -702,15 +703,15 @@ def enviados():
 
         enviados.append(transaction)
 
-    conn.close()
-    return render_template('enviados.html',
-                     transactions=enviados,
-                     totals=totals,
-                     tipo_filtro=tipo_filtro,
-                     cnpj_filtro=cnpj_filtro,
-                     start_date=start_date,
-                     end_date=end_date,
-                     failed_cnpjs=len(failed_cnpjs))
+        conn.close()
+        return render_template('enviados.html',
+                        transactions=enviados,
+                        totals=totals,
+                        tipo_filtro=tipo_filtro,
+                        cnpj_filtro=cnpj_filtro,
+                        start_date=start_date,
+                        end_date=end_date,
+                        failed_cnpjs=len(failed_cnpjs))
 
 @app.route('/retry-failed-cnpjs')
 @login_required
