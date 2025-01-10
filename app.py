@@ -633,14 +633,15 @@ def enviados():
         'PIX ENVIADO': 'pix_enviado',
         'TED ENVIADA': 'ted_enviada',
         'PAGAMENTO': 'pagamento',
-        'CHEQUE': 'cheque'  # Adicione esta linha para garantir que há 12 tipos
+        'CHEQUE': 'cheque',
+        'COMPRA': 'compra'  # Adicione esta linha para garantir que o tipo "COMPRA" seja mapeado
     }
 
     # Base query
     query = '''
         SELECT date, description, value, type, document
         FROM transactions
-        WHERE type IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        WHERE type IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     '''
     params = list(type_mapping.keys())
 
