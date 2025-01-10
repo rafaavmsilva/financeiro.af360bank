@@ -617,7 +617,8 @@ def enviados():
         'cancelamento': 0.0,
         'pix_enviado': 0.0,
         'ted_enviada': 0.0,
-        'pagamento': 0.0
+        'pagamento': 0.0,
+        'compra': 0.0  # Adicione esta linha para garantir que o tipo "COMPRA" seja mapeado
     }
 
     # Type mapping for totals
