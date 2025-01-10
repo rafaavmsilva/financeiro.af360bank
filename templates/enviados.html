@@ -37,7 +37,7 @@
             <div class="btn-group" role="group" aria-label="Filtro de transações">
                 <a href="{{ url_for('enviados', tipo='todos', cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
                    class="btn btn-outline-primary {% if tipo_filtro == 'todos' %}active{% endif %}">Todos</a>
-                {% for tipo in ['PIX ENVIADO', 'TED ENVIADA', 'PAGAMENTO', 'JUROS', 'IOF', 'COMPRA CARTAO', 'COMPENSACAO', 'APLICACAO', 'CHEQUE EMITIDO/DEBITADO', 'MULTA', 'CANCELAMENTO RESGATE'] %}
+                {% for tipo in ['PIX ENVIADO', 'TED ENVIADA', 'PAGAMENTO', 'JUROS', 'IOF', 'COMPRA CARTAO', 'COMPENSACAO', 'APLICACAO', 'CHEQUE', 'MULTA', 'CANCELAMENTO RESGATE'] %}
                 <a href="{{ url_for('enviados', tipo=tipo, cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
                    class="btn btn-outline-secondary {% if tipo_filtro == tipo %}active{% endif %}">
                     {{ tipo|replace('_', ' ')|title }}
