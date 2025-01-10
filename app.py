@@ -609,7 +609,7 @@ def enviados():
     totals = {
         'juros': 0.0,
         'iof': 0.0,
-        'cartao': 0.0,  # Alterado para "cartao"
+        'cartao': 0.0,
         'compensacao': 0.0,
         'aplicacao': 0.0,
         'cheque': 0.0,
@@ -618,14 +618,14 @@ def enviados():
         'pix_enviado': 0.0,
         'ted_enviada': 0.0,
         'pagamento': 0.0,
-        'compra': 0.0  # Adicione esta linha para garantir que o tipo "COMPRA" seja mapeado
+        'compra': 0.0
     }
 
     # Type mapping for totals
     type_mapping = {
         'JUROS': 'juros',
         'IOF': 'iof',
-        'COMPRA CARTAO': 'cartao',  # Alterado para "cartao"
+        'COMPRA CARTAO': 'cartao',
         'COMPENSACAO': 'compensacao',
         'APLICACAO': 'aplicacao',
         'CHEQUE EMITIDO/DEBITADO': 'cheque',
@@ -635,7 +635,7 @@ def enviados():
         'TED ENVIADA': 'ted_enviada',
         'PAGAMENTO': 'pagamento',
         'CHEQUE': 'cheque',
-        'COMPRA': 'compra'  # Adicione esta linha para garantir que o tipo "COMPRA" seja mapeado
+        'COMPRA': 'compra'
     }
 
     # Base query
@@ -703,15 +703,15 @@ def enviados():
 
         enviados.append(transaction)
 
-        conn.close()
-        return render_template('enviados.html',
-                        transactions=enviados,
-                        totals=totals,
-                        tipo_filtro=tipo_filtro,
-                        cnpj_filtro=cnpj_filtro,
-                        start_date=start_date,
-                        end_date=end_date,
-                        failed_cnpjs=len(failed_cnpjs))
+    conn.close()
+    return render_template('enviados.html',
+                           transactions=enviados,
+                           totals=totals,
+                           tipo_filtro=tipo_filtro,
+                           cnpj_filtro=cnpj_filtro,
+                           start_date=start_date,
+                           end_date=end_date,
+                           failed_cnpjs=len(failed_cnpjs))
 
 @app.route('/retry-failed-cnpjs')
 @login_required
