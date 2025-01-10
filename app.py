@@ -686,6 +686,10 @@ def enviados():
         if total_key:
             totals[total_key] += abs(transaction['value'])
 
+        # Format description for COMPRA CARTAO
+        if transaction['type'] == 'COMPRA CARTAO':
+            transaction['description'] = f"CARTÃO {transaction['description']}"
+
         # Get company info
         if transaction['document']:
             company_info = get_company_info(transaction['document'])
