@@ -462,11 +462,27 @@ def health_check():
         'app_name': os.getenv('APP_NAME')
     })
 
+def create_companies_table():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS companies (
+            document TEXT PRIMARY KEY,
+            nome_fantasia TEXT,
+            razao_social TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
 @app.route('/recebidos')
 @login_required
 def recebidos():
     if not session.get('authenticated'):
         return redirect('https://af360bank.onrender.com/login')
+    
+    create_companies_table()  # Certifique-se de que a tabela companies exista
+    
     conn = get_db_connection()
     cursor = conn.cursor()
 
