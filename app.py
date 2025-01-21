@@ -525,22 +525,22 @@ def recebidos():
     # Add filters
     if tipo_filtro != 'todos':
         if tipo_filtro == 'DIVERSOS':
-            query += " AND type NOT IN ({})".format(','.join(['%s'] * len(type_mapping)))
+            query += " AND type NOT IN ({})".format(','.join(['?'] * len(type_mapping)))
             params.extend(type_mapping.keys())
         else:
-            query += " AND type = %s"
+            query += " AND type = ?"
             params.append(tipo_filtro)
 
     if cnpj_filtro != 'todos':
-        query += " AND document = %s"
+        query += " AND document = ?"
         params.append(cnpj_filtro)
 
     if start_date:
-        query += " AND date >= %s"
+        query += " AND date >= ?"
         params.append(start_date)
 
     if end_date:
-        query += " AND date <= %s"
+        query += " AND date <= ?"
         params.append(end_date)
 
     query += " ORDER BY date DESC"
@@ -650,22 +650,22 @@ def enviados():
     # Add filters
     if tipo_filtro != 'todos':
         if tipo_filtro == 'DIVERSOS':
-            query += " AND type NOT IN ({})".format(','.join(['%s'] * len(type_mapping)))
+            query += " AND type NOT IN ({})".format(','.join(['?'] * len(type_mapping)))
             params.extend(type_mapping.keys())
         else:
-            query += " AND type = %s"
+            query += " AND type = ?"
             params.append(tipo_filtro)
 
     if cnpj_filtro != 'todos':
-        query += " AND document = %s"
+        query += " AND document = ?"
         params.append(cnpj_filtro)
 
     if start_date:
-        query += " AND date >= %s"
+        query += " AND date >= ?"
         params.append(start_date)
 
     if end_date:
-        query += " AND date <= %s"
+        query += " AND date <= ?"
         params.append(end_date)
 
     query += " ORDER BY date DESC"
