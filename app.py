@@ -481,8 +481,6 @@ def recebidos():
     if not session.get('authenticated'):
         return redirect('https://af360bank.onrender.com/login')
     
-    create_companies_table()  # Certifique-se de que a tabela companies exista
-    
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -527,22 +525,22 @@ def recebidos():
     # Add filters
     if tipo_filtro != 'todos':
         if tipo_filtro == 'DIVERSOS':
-            query += " AND type NOT IN ({})".format(','.join(['?'] * len(type_mapping)))
+            query += " AND type NOT IN ({})".format(','.join(['%s'] * len(type_mapping)))
             params.extend(type_mapping.keys())
         else:
-            query += " AND type = ?"
+            query += " AND type = %s"
             params.append(tipo_filtro)
 
     if cnpj_filtro != 'todos':
-        query += " AND document = ?"
+        query += " AND document = %s"
         params.append(cnpj_filtro)
 
     if start_date:
-        query += " AND date >= ?"
+        query += " AND date >= %s"
         params.append(start_date)
 
     if end_date:
-        query += " AND date <= ?"
+        query += " AND date <= %s"
         params.append(end_date)
 
     query += " ORDER BY date DESC"
@@ -608,6 +606,7 @@ def recebidos():
 def enviados():
     if not session.get('authenticated'):
         return redirect('https://af360bank.onrender.com/login')
+    
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -624,15 +623,10 @@ def enviados():
     totals = {
         'juros': 0.0,
         'iof': 0.0,
-        'cartao': 0.0,
-        'compensacao': 0.0,
-        'aplicacao': 0.0,
-        'cheque': 0.0,
-        'multa': 0.0,
         'pix_enviado': 0.0,
         'ted_enviada': 0.0,
         'pagamento': 0.0,
-        'compra': 0.0,
+        'cheque_devolvido': 0.0,
         'diversos': 0.0  # Adicione esta linha para garantir que o tipo "DIVERSOS" seja mapeado
     }
 
@@ -640,44 +634,39 @@ def enviados():
     type_mapping = {
         'JUROS': 'juros',
         'IOF': 'iof',
-        'COMPRA CARTAO': 'cartao',
-        'COMPENSACAO': 'compensacao',
-        'APLICACAO': 'aplicacao',
-        'CHEQUE EMITIDO/DEBITADO': 'cheque',
-        'MULTA': 'multa',
         'PIX ENVIADO': 'pix_enviado',
         'TED ENVIADA': 'ted_enviada',
         'PAGAMENTO': 'pagamento',
-        'CHEQUE': 'cheque',
-        'COMPRA': 'compra',
-        'RESGATE': 'diversos',  # Mapeia RESGATE para diversos
-        'TRANSFERENCIA': 'diversos',  # Mapeia TRANSFERENCIA para diversos
-        'CREDITO': 'diversos'  # Mapeia CREDITO para diversos
+        'CHEQUE DEVOLVIDO': 'cheque_devolvido'
     }
 
     # Base query
     query = '''
         SELECT date, description, value, type, document
         FROM transactions
-        WHERE type IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        WHERE value < 0
     '''
-    params = list(type_mapping.keys())
+    params = []
 
     # Add filters
     if tipo_filtro != 'todos':
-        query += " AND type = ?"
-        params.append(tipo_filtro)
+        if tipo_filtro == 'DIVERSOS':
+            query += " AND type NOT IN ({})".format(','.join(['%s'] * len(type_mapping)))
+            params.extend(type_mapping.keys())
+        else:
+            query += " AND type = %s"
+            params.append(tipo_filtro)
 
     if cnpj_filtro != 'todos':
-        query += " AND document = ?"
+        query += " AND document = %s"
         params.append(cnpj_filtro)
 
     if start_date:
-        query += " AND date >= ?"
+        query += " AND date >= %s"
         params.append(start_date)
 
     if end_date:
-        query += " AND date <= ?"
+        query += " AND date <= %s"
         params.append(end_date)
 
     query += " ORDER BY date DESC"
@@ -694,18 +683,22 @@ def enviados():
             'has_company_info': False
         }
 
-        # Exclude transactions with value > 0
-        if transaction['value'] > 0:
-            continue
-
         # Update totals
         total_key = type_mapping.get(transaction['type'], 'diversos')  # Default to 'diversos' if type not found
         totals[total_key] += abs(transaction['value'])
 
-        # Format description and type for CARTAO
-        if transaction['type'] == 'COMPRA CARTAO':
-            transaction['description'] = f"CARTÃO {transaction['description']}"
-            transaction['type'] = 'CARTAO'  # Change type to CARTAO
+        # Format description for known types
+        if transaction['type'] in type_mapping:
+            if transaction['type'] == 'PAGAMENTO' and 'PAGAMENTO A' in transaction['description']:
+                transaction['description'] = f"PAGAMENTO A FORNECEDORES {transaction['description']}"
+            elif transaction['type'] == 'PIX ENVIADO':
+                transaction['description'] = f"PIX ENVIADO {transaction['description']}"
+            elif transaction['type'] == 'TED ENVIADA':
+                transaction['description'] = f"TED ENVIADA {transaction['description']}"
+            elif transaction['type'] == 'CHEQUE DEVOLVIDO':
+                transaction['description'] = f"CHEQUE DEVOLVIDO {transaction['description']}"
+        else:
+            transaction['type'] = 'DIVERSOS'
 
         # Get company info
         if transaction['document']:
@@ -719,6 +712,10 @@ def enviados():
 
         enviados.append(transaction)
 
+    # Define cnpjs variable
+    cursor.execute('SELECT DISTINCT document, nome_fantasia FROM companies')
+    cnpjs = [{'cnpj': row[0], 'name': row[1]} for row in cursor.fetchall()]
+
     conn.close()
     return render_template('enviados.html',
                            transactions=enviados,
@@ -727,6 +724,7 @@ def enviados():
                            cnpj_filtro=cnpj_filtro,
                            start_date=start_date,
                            end_date=end_date,
+                           cnpjs=cnpjs,
                            failed_cnpjs=len(failed_cnpjs))
 
 @app.route('/retry-failed-cnpjs')
