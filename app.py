@@ -725,6 +725,72 @@ def enviados():
                            cnpjs=cnpjs,
                            failed_cnpjs=len(failed_cnpjs))
 
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    if not session.get('authenticated'):
+        return redirect('https://af360bank.onrender.com/login')
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Get transaction totals
+    cursor.execute('''
+        SELECT type, SUM(value) as total
+        FROM transactions
+        GROUP BY type
+    ''')
+    
+    type_totals = {}
+    for row in cursor.fetchall():
+        type_totals[row[0]] = abs(row[1])
+
+    # Get monthly totals for cash flow
+    cursor.execute('''
+        SELECT strftime('%Y-%m', date) as month,
+               SUM(CASE WHEN value > 0 THEN value ELSE 0 END) as received,
+               SUM(CASE WHEN value < 0 THEN ABS(value) ELSE 0 END) as sent
+        FROM transactions
+        GROUP BY month
+        ORDER BY month DESC
+        LIMIT 6
+    ''')
+    
+    months = []
+    received = []
+    sent = []
+    for row in cursor.fetchall():
+        months.append(row[0])
+        received.append(float(row[1]))
+        sent.append(float(row[2]))
+
+    # Get top CNPJs
+    cursor.execute('''
+        SELECT document, SUM(ABS(value)) as total
+        FROM transactions
+        WHERE document IS NOT NULL
+        GROUP BY document
+        ORDER BY total DESC
+        LIMIT 5
+    ''')
+    
+    top_cnpjs = {}
+    for row in cursor.fetchall():
+        company_info = get_company_info(row[0])
+        if company_info:
+            name = company_info.get('nome_fantasia') or company_info.get('razao_social', '')
+            top_cnpjs[name] = float(row[1])
+
+    conn.close()
+
+    return render_template('dashboard.html',
+                         active_page='dashboard',
+                         type_totals=type_totals,
+                         months=months,
+                         received=received,
+                         sent=sent,
+                         top_cnpjs=top_cnpjs)
+
 @app.route('/retry-failed-cnpjs')
 @login_required
 def retry_failed_cnpjs():
