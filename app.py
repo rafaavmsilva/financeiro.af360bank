@@ -576,7 +576,7 @@ def recebidos():
 
         # Get company info
         if transaction['document']:
-            company_info = get_company_info(transaction['document'])
+            company_info = cnpj_cache.get(transaction['document'])
             if company_info:
                 company_name = company_info.get('nome_fantasia') or company_info.get('razao_social', '')
                 if company_name:
@@ -586,9 +586,8 @@ def recebidos():
 
         recebidos.append(transaction)
 
-    # Define cnpjs variable
-    cursor.execute('SELECT DISTINCT document, nome_fantasia FROM companies')
-    cnpjs = [{'cnpj': row[0], 'name': row[1]} for row in cursor.fetchall()]
+    # Define cnpjs variable from cnpj_cache
+    cnpjs = [{'cnpj': cnpj, 'name': info.get('nome_fantasia') or info.get('razao_social', '')} for cnpj, info in cnpj_cache.items()]
 
     conn.close()
     return render_template('recebidos.html',
@@ -702,7 +701,7 @@ def enviados():
 
         # Get company info
         if transaction['document']:
-            company_info = get_company_info(transaction['document'])
+            company_info = cnpj_cache.get(transaction['document'])
             if company_info:
                 company_name = company_info.get('nome_fantasia') or company_info.get('razao_social', '')
                 if company_name:
@@ -712,9 +711,8 @@ def enviados():
 
         enviados.append(transaction)
 
-    # Define cnpjs variable
-    cursor.execute('SELECT DISTINCT document, nome_fantasia FROM companies')
-    cnpjs = [{'cnpj': row[0], 'name': row[1]} for row in cursor.fetchall()]
+    # Define cnpjs variable from cnpj_cache
+    cnpjs = [{'cnpj': cnpj, 'name': info.get('nome_fantasia') or info.get('razao_social', '')} for cnpj, info in cnpj_cache.items()]
 
     conn.close()
     return render_template('enviados.html',
