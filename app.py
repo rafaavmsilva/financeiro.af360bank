@@ -734,18 +734,44 @@ def dashboard():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Get transaction totals
+    # Initialize totals
+    totals = {
+        'recebidos': 0,
+        'enviados': 0,
+        'juros': 0,
+        'iof': 0,
+        'pix_recebido': 0,
+        'ted_recebida': 0,
+        'pix_enviado': 0,
+        'ted_enviada': 0,
+        'pagamento': 0,
+        'cheque_devolvido': 0,
+        'diversos': 0
+    }
+
+    # Get transaction totals by type
     cursor.execute('''
-        SELECT type, SUM(value) as total
-        FROM transactions
+        SELECT 
+            type,
+            SUM(CASE WHEN value > 0 THEN value ELSE 0 END) as received,
+            SUM(CASE WHEN value < 0 THEN ABS(value) ELSE 0 END) as sent
+        FROM transactions 
         GROUP BY type
     ''')
     
-    type_totals = {}
     for row in cursor.fetchall():
-        type_totals[row[0]] = abs(row[1])
+        type_, received, sent = row
+        type_key = type_.lower().replace(' ', '_')
+        if received > 0:
+            totals['recebidos'] += received
+            if type_key in totals:
+                totals[type_key] = received
+        if sent > 0:
+            totals['enviados'] += sent
+            if type_key in totals:
+                totals[type_key] = sent
 
-    # Get monthly totals for cash flow
+    # Get monthly data
     cursor.execute('''
         SELECT strftime('%Y-%m', date) as month,
                SUM(CASE WHEN value > 0 THEN value ELSE 0 END) as received,
@@ -776,16 +802,17 @@ def dashboard():
     
     top_cnpjs = {}
     for row in cursor.fetchall():
-        company_info = get_company_info(row[0])
-        if company_info:
-            name = company_info.get('nome_fantasia') or company_info.get('razao_social', '')
-            top_cnpjs[name] = float(row[1])
+        if row[0]:  # Check if document is not None
+            company_info = get_company_info(row[0])
+            if company_info:
+                name = company_info.get('nome_fantasia') or company_info.get('razao_social', '')
+                top_cnpjs[name] = float(row[1])
 
     conn.close()
 
     return render_template('dashboard.html',
                          active_page='dashboard',
-                         type_totals=type_totals,
+                         totals=totals,
                          months=months,
                          received=received,
                          sent=sent,
