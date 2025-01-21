@@ -72,7 +72,7 @@
             <div class="dashboard-card">
                 <div class="metric-label">Total Recebido</div>
                 <div class="metric-value text-success">
-                    R$ {{ "%.2f"|format(totals.pix_recebido + totals.ted_recebida)|replace('.', ',') }}
+                    R$ {{ "%.2f"|format(totals.recebidos)|replace('.', ',') }}
                 </div>
             </div>
         </div>
@@ -80,7 +80,7 @@
             <div class="dashboard-card">
                 <div class="metric-label">Total Enviado</div>
                 <div class="metric-value text-danger">
-                    R$ {{ "%.2f"|format(totals.pix_enviado + totals.ted_enviada)|replace('.', ',') }}
+                    R$ {{ "%.2f"|format(totals.enviados)|replace('.', ',') }}
                 </div>
             </div>
         </div>
