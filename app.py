@@ -137,8 +137,8 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'xls', 'xlsx'}
 
 def get_company_info(cnpj):
-    """Busca informações da empresa, usando cache se disponível"""
-    # Verifica se já está no cache
+    """Fetch company information using cache if available"""
+    # Check if already in cache
     if cnpj in cnpj_cache:
         return cnpj_cache[cnpj]
     
@@ -146,7 +146,7 @@ def get_company_info(cnpj):
         response = requests.get(f'https://brasilapi.com.br/api/cnpj/v1/{cnpj}')
         if response.status_code == 200:
             company_info = response.json()
-            # Armazena no cache
+            # Store in cache
             cnpj_cache[cnpj] = company_info
             if cnpj in failed_cnpjs:
                 failed_cnpjs.remove(cnpj)
@@ -154,7 +154,7 @@ def get_company_info(cnpj):
         else:
             failed_cnpjs.add(cnpj)
     except Exception as e:
-        print(f"Erro ao buscar informações da empresa: {e}")
+        print(f"Error fetching company information: {e}")
         failed_cnpjs.add(cnpj)
     return None
 
@@ -501,7 +501,7 @@ def recebidos():
         'ted_recebida': 0.0,
         'pagamento': 0.0,
         'cheque_devolvido': 0.0,
-        'diversos': 0.0  # Adicione esta linha para garantir que o tipo "DIVERSOS" seja mapeado
+        'diversos': 0.0  # Ensure "DIVERSOS" type is mapped
     }
 
     # Type mapping for totals
@@ -576,7 +576,7 @@ def recebidos():
 
         # Get company info
         if transaction['document']:
-            company_info = cnpj_cache.get(transaction['document'])
+            company_info = get_company_info(transaction['document'])
             if company_info:
                 company_name = company_info.get('nome_fantasia') or company_info.get('razao_social', '')
                 if company_name:
@@ -626,7 +626,7 @@ def enviados():
         'ted_enviada': 0.0,
         'pagamento': 0.0,
         'cheque_devolvido': 0.0,
-        'diversos': 0.0  # Adicione esta linha para garantir que o tipo "DIVERSOS" seja mapeado
+        'diversos': 0.0  # Ensure "DIVERSOS" type is mapped
     }
 
     # Type mapping for totals
@@ -701,7 +701,7 @@ def enviados():
 
         # Get company info
         if transaction['document']:
-            company_info = cnpj_cache.get(transaction['document'])
+            company_info = get_company_info(transaction['document'])
             if company_info:
                 company_name = company_info.get('nome_fantasia') or company_info.get('razao_social', '')
                 if company_name:
