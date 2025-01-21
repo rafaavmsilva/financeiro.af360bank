@@ -140,22 +140,39 @@
 new Chart(document.getElementById('cashFlowChart'), {
     type: 'line',
     data: {
-        labels: ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun'],
+        labels: {{ months|default([])|tojson|safe }},
         datasets: [{
             label: 'Recebimentos',
-            data: [12000, 19000, 15000, 25000, 22000, 30000],
+            data: {{ received|default([])|tojson|safe }},
             borderColor: '#28a745',
-            tension: 0.4
+            tension: 0.4,
+            fill: false
         }, {
             label: 'Pagamentos',
-            data: [10000, 15000, 12000, 20000, 18000, 25000],
+            data: {{ sent|default([])|tojson|safe }},
             borderColor: '#dc3545',
-            tension: 0.4
+            tension: 0.4,
+            fill: false
         }]
     },
     options: {
         responsive: true,
-        maintainAspectRatio: false
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                position: 'top'
+            }
+        },
+        scales: {
+            y: {
+                beginAtZero: true,
+                ticks: {
+                    callback: function(value) {
+                        return 'R$ ' + value.toLocaleString('pt-BR');
+                    }
+                }
+            }
+        }
     }
 });
 
@@ -163,9 +180,9 @@ new Chart(document.getElementById('cashFlowChart'), {
 new Chart(document.getElementById('expensesChart'), {
     type: 'doughnut',
     data: {
-        labels: ['PIX', 'TED', 'Pagamentos', 'Taxas', 'Outros'],
+        labels: {{ expense_types|default([])|tojson|safe }},
         datasets: [{
-            data: [30, 20, 25, 15, 10],
+            data: {{ expense_values|default([])|tojson|safe }},
             backgroundColor: [
                 '#28a745',
                 '#007bff',
@@ -177,7 +194,12 @@ new Chart(document.getElementById('expensesChart'), {
     },
     options: {
         responsive: true,
-        maintainAspectRatio: false
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                position: 'right'
+            }
+        }
     }
 });
 
@@ -185,16 +207,26 @@ new Chart(document.getElementById('expensesChart'), {
 new Chart(document.getElementById('transactionTrendsChart'), {
     type: 'bar',
     data: {
-        labels: ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun'],
+        labels: {{ months|default([])|tojson|safe }},
         datasets: [{
             label: 'Volume de Transações',
-            data: [65, 59, 80, 81, 56, 55],
+            data: {{ received|default([])|map('abs')|list|tojson|safe }},
             backgroundColor: '#007bff'
         }]
     },
     options: {
         responsive: true,
-        maintainAspectRatio: false
+        maintainAspectRatio: false,
+        scales: {
+            y: {
+                beginAtZero: true,
+                ticks: {
+                    callback: function(value) {
+                        return 'R$ ' + value.toLocaleString('pt-BR');
+                    }
+                }
+            }
+        }
     }
 });
 
@@ -202,9 +234,9 @@ new Chart(document.getElementById('transactionTrendsChart'), {
 new Chart(document.getElementById('topCNPJsChart'), {
     type: 'pie',
     data: {
-        labels: ['CNPJ 1', 'CNPJ 2', 'CNPJ 3', 'CNPJ 4', 'Outros'],
+        labels: {{ top_cnpjs|default([])|map(attribute='name')|list|tojson|safe }},
         datasets: [{
-            data: [30, 25, 20, 15, 10],
+            data: {{ top_cnpjs|default([])|map(attribute='value')|list|tojson|safe }},
             backgroundColor: [
                 '#28a745',
                 '#007bff',
@@ -216,7 +248,15 @@ new Chart(document.getElementById('topCNPJsChart'), {
     },
     options: {
         responsive: true,
-        maintainAspectRatio: false
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                position: 'right',
+                labels: {
+                    boxWidth: 12
+                }
+            }
+        }
     }
 });
 </script>

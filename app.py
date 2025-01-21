@@ -734,51 +734,40 @@ def dashboard():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Initialize totals
-    totals = {
-        'recebidos': 0,
-        'enviados': 0,
-        'juros': 0,
-        'iof': 0,
-        'pix_recebido': 0,
-        'ted_recebida': 0,
-        'pix_enviado': 0,
-        'ted_enviada': 0,
-        'pagamento': 0,
-        'cheque_devolvido': 0,
-        'diversos': 0
-    }
-
-    # Get transaction totals by type
+    # Calculate totals
     cursor.execute('''
         SELECT 
-            type,
             SUM(CASE WHEN value > 0 THEN value ELSE 0 END) as received,
-            SUM(CASE WHEN value < 0 THEN ABS(value) ELSE 0 END) as sent
-        FROM transactions 
-        GROUP BY type
+            SUM(CASE WHEN value < 0 THEN ABS(value) ELSE 0 END) as sent,
+            SUM(CASE WHEN type = 'JUROS' THEN ABS(value) ELSE 0 END) as juros,
+            SUM(CASE WHEN type = 'IOF' THEN ABS(value) ELSE 0 END) as iof,
+            SUM(CASE WHEN type = 'PIX RECEBIDO' THEN value ELSE 0 END) as pix_recebido,
+            SUM(CASE WHEN type = 'TED RECEBIDA' THEN value ELSE 0 END) as ted_recebida,
+            SUM(CASE WHEN type = 'PIX ENVIADO' THEN ABS(value) ELSE 0 END) as pix_enviado,
+            SUM(CASE WHEN type = 'TED ENVIADA' THEN ABS(value) ELSE 0 END) as ted_enviada
+        FROM transactions
     ''')
     
-    for row in cursor.fetchall():
-        type_, received, sent = row
-        type_key = type_.lower().replace(' ', '_')
-        if received > 0:
-            totals['recebidos'] += received
-            if type_key in totals:
-                totals[type_key] = received
-        if sent > 0:
-            totals['enviados'] += sent
-            if type_key in totals:
-                totals[type_key] = sent
+    row = cursor.fetchone()
+    totals = {
+        'recebidos': float(row[0] or 0),
+        'enviados': float(row[1] or 0),
+        'juros': float(row[2] or 0),
+        'iof': float(row[3] or 0),
+        'pix_recebido': float(row[4] or 0),
+        'ted_recebida': float(row[5] or 0),
+        'pix_enviado': float(row[6] or 0),
+        'ted_enviada': float(row[7] or 0)
+    }
 
-    # Get monthly data
+    # Get monthly data for cash flow
     cursor.execute('''
-        SELECT strftime('%Y-%m', date) as month,
+        SELECT strftime('%m/%Y', date) as month,
                SUM(CASE WHEN value > 0 THEN value ELSE 0 END) as received,
                SUM(CASE WHEN value < 0 THEN ABS(value) ELSE 0 END) as sent
         FROM transactions
         GROUP BY month
-        ORDER BY month DESC
+        ORDER BY date DESC
         LIMIT 6
     ''')
     
@@ -787,10 +776,25 @@ def dashboard():
     sent = []
     for row in cursor.fetchall():
         months.append(row[0])
-        received.append(float(row[1]))
-        sent.append(float(row[2]))
+        received.append(float(row[1] or 0))
+        sent.append(float(row[2] or 0))
 
-    # Get top CNPJs
+    # Get expenses distribution
+    cursor.execute('''
+        SELECT type, SUM(ABS(value)) as total
+        FROM transactions
+        WHERE value < 0
+        GROUP BY type
+        ORDER BY total DESC
+    ''')
+    
+    expense_types = []
+    expense_values = []
+    for row in cursor.fetchall():
+        expense_types.append(row[0])
+        expense_values.append(float(row[1] or 0))
+
+    # Get top CNPJs with names
     cursor.execute('''
         SELECT document, SUM(ABS(value)) as total
         FROM transactions
@@ -800,13 +804,17 @@ def dashboard():
         LIMIT 5
     ''')
     
-    top_cnpjs = {}
+    top_cnpjs = []
     for row in cursor.fetchall():
-        if row[0]:  # Check if document is not None
+        if row[0]:
             company_info = get_company_info(row[0])
             if company_info:
                 name = company_info.get('nome_fantasia') or company_info.get('razao_social', '')
-                top_cnpjs[name] = float(row[1])
+                if name:
+                    top_cnpjs.append({
+                        'name': name,
+                        'value': float(row[1] or 0)
+                    })
 
     conn.close()
 
@@ -816,6 +824,8 @@ def dashboard():
                          months=months,
                          received=received,
                          sent=sent,
+                         expense_types=expense_types,
+                         expense_values=expense_values,
                          top_cnpjs=top_cnpjs)
 
 @app.route('/retry-failed-cnpjs')
