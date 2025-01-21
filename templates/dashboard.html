@@ -72,7 +72,7 @@
             <div class="dashboard-card">
                 <div class="metric-label">Total Recebido</div>
                 <div class="metric-value text-success">
-                    R$ {{ "%.2f"|format(totals.recebidos)|replace('.', ',') }}
+                    R$ {{ "%.2f"|format(totals.pix_recebido + totals.ted_recebida)|replace('.', ',') }}
                 </div>
             </div>
         </div>
@@ -80,7 +80,7 @@
             <div class="dashboard-card">
                 <div class="metric-label">Total Enviado</div>
                 <div class="metric-value text-danger">
-                    R$ {{ "%.2f"|format(totals.enviados)|replace('.', ',') }}
+                    R$ {{ "%.2f"|format(totals.pix_enviado + totals.ted_enviada)|replace('.', ',') }}
                 </div>
             </div>
         </div>
@@ -136,128 +136,128 @@
 </div>
 
 <script>
-// Cash Flow Chart
-new Chart(document.getElementById('cashFlowChart'), {
-    type: 'line',
-    data: {
-        labels: {{ months|default([])|tojson|safe }},
-        datasets: [{
-            label: 'Recebimentos',
-            data: {{ received|default([])|tojson|safe }},
-            borderColor: '#28a745',
-            tension: 0.4,
-            fill: false
-        }, {
-            label: 'Pagamentos',
-            data: {{ sent|default([])|tojson|safe }},
-            borderColor: '#dc3545',
-            tension: 0.4,
-            fill: false
-        }]
-    },
-    options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-            legend: {
-                position: 'top'
-            }
+    // Cash Flow Chart
+    new Chart(document.getElementById('cashFlowChart'), {
+        type: 'line',
+        data: {
+            labels: {{ months|default([])|tojson|safe }},
+            datasets: [{
+                label: 'Recebimentos',
+                data: {{ received|default([])|tojson|safe }},
+                borderColor: '#28a745',
+                tension: 0.4,
+                fill: false
+            }, {
+                label: 'Pagamentos',
+                data: {{ sent|default([])|tojson|safe }},
+                borderColor: '#dc3545',
+                tension: 0.4,
+                fill: false
+            }]
         },
-        scales: {
-            y: {
-                beginAtZero: true,
-                ticks: {
-                    callback: function(value) {
-                        return 'R$ ' + value.toLocaleString('pt-BR');
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'top'
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return 'R$ ' + value.toLocaleString('pt-BR');
+                        }
                     }
                 }
             }
         }
-    }
-});
-
-// Expenses Distribution Chart
-new Chart(document.getElementById('expensesChart'), {
-    type: 'doughnut',
-    data: {
-        labels: {{ expense_types|default([])|tojson|safe }},
-        datasets: [{
-            data: {{ expense_values|default([])|tojson|safe }},
-            backgroundColor: [
-                '#28a745',
-                '#007bff',
-                '#ffc107',
-                '#dc3545',
-                '#6c757d'
-            ]
-        }]
-    },
-    options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-            legend: {
-                position: 'right'
+    });
+    
+    // Expenses Distribution Chart
+    new Chart(document.getElementById('expensesChart'), {
+        type: 'doughnut',
+        data: {
+            labels: {{ expense_types|default([])|tojson|safe }},
+            datasets: [{
+                data: {{ expense_values|default([])|tojson|safe }},
+                backgroundColor: [
+                    '#28a745',
+                    '#007bff',
+                    '#ffc107',
+                    '#dc3545',
+                    '#6c757d'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right'
+                }
             }
         }
-    }
-});
-
-// Transaction Trends Chart
-new Chart(document.getElementById('transactionTrendsChart'), {
-    type: 'bar',
-    data: {
-        labels: {{ months|default([])|tojson|safe }},
-        datasets: [{
-            label: 'Volume de Transações',
-            data: {{ received|default([])|map('abs')|list|tojson|safe }},
-            backgroundColor: '#007bff'
-        }]
-    },
-    options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-            y: {
-                beginAtZero: true,
-                ticks: {
-                    callback: function(value) {
-                        return 'R$ ' + value.toLocaleString('pt-BR');
+    });
+    
+    // Transaction Trends Chart
+    new Chart(document.getElementById('transactionTrendsChart'), {
+        type: 'bar',
+        data: {
+            labels: {{ months|default([])|tojson|safe }},
+            datasets: [{
+                label: 'Volume de Transações',
+                data: {{ received|default([])|map('abs')|list|tojson|safe }},
+                backgroundColor: '#007bff'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return 'R$ ' + value.toLocaleString('pt-BR');
+                        }
                     }
                 }
             }
         }
-    }
-});
-
-// Top CNPJs Chart
-new Chart(document.getElementById('topCNPJsChart'), {
-    type: 'pie',
-    data: {
-        labels: {{ top_cnpjs|default([])|map(attribute='name')|list|tojson|safe }},
-        datasets: [{
-            data: {{ top_cnpjs|default([])|map(attribute='value')|list|tojson|safe }},
-            backgroundColor: [
-                '#28a745',
-                '#007bff',
-                '#ffc107',
-                '#dc3545',
-                '#6c757d'
-            ]
-        }]
-    },
-    options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-            legend: {
-                position: 'right',
-                labels: {
-                    boxWidth: 12
+    });
+    
+    // Top CNPJs Chart
+    new Chart(document.getElementById('topCNPJsChart'), {
+        type: 'pie',
+        data: {
+            labels: {{ top_cnpjs|default([])|map(attribute='name')|list|tojson|safe }},
+            datasets: [{
+                data: {{ top_cnpjs|default([])|map(attribute='value')|list|tojson|safe }},
+                backgroundColor: [
+                    '#28a745',
+                    '#007bff',
+                    '#ffc107',
+                    '#dc3545',
+                    '#6c757d'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right',
+                    labels: {
+                        boxWidth: 12
+                    }
                 }
             }
         }
-    }
-});
-</script>
+    });
+    </script>
 {% endblock %}
