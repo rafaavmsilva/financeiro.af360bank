@@ -1,124 +1,223 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard - Sistema Financeiro{% endblock %}
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+.dashboard-card {
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    padding: 20px;
+    margin-bottom: 20px;
+    transition: transform 0.2s;
+}
 
-{% block content %}
-<div class="row">
-    <div class="col-md-4">
-        <div class="card bg-success text-white mb-4">
-            <div class="card-body">
-                <h5 class="card-title">Receitas</h5>
-                <h2 class="card-text">R$ {{ "{:,.2f}".format(summary.receitas) }}</h2>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="card bg-danger text-white mb-4">
-            <div class="card-body">
-                <h5 class="card-title">Despesas</h5>
-                <h2 class="card-text">R$ {{ "{:,.2f}".format(summary.despesas) }}</h2>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="card bg-info text-white mb-4">
-            <div class="card-body">
-                <h5 class="card-title">Saldo</h5>
-                <h2 class="card-text">R$ {{ "{:,.2f}".format(summary.saldo) }}</h2>
-            </div>
-        </div>
-    </div>
-</div>
+.dashboard-card:hover {
+    transform: translateY(-5px);
+}
 
-<div class="row mt-4">
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">Distribuição de Despesas</h5>
-            </div>
-            <div class="card-body">
-                <canvas id="expensesChart"></canvas>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">Evolução Mensal</h5>
-            </div>
-            <div class="card-body">
-                <canvas id="monthlyChart"></canvas>
-            </div>
-        </div>
-    </div>
-</div>
+.metric-value {
+    font-size: 24px;
+    font-weight: bold;
+    margin: 10px 0;
+}
+
+.metric-label {
+    color: #6c757d;
+    font-size: 14px;
+    text-transform: uppercase;
+}
+
+.chart-container {
+    position: relative;
+    height: 300px;
+    margin: 20px 0;
+}
+
+.trend-indicator {
+    display: inline-flex;
+    align-items: center;
+    font-size: 14px;
+    margin-left: 10px;
+}
+
+.trend-up {
+    color: #28a745;
+}
+
+.trend-down {
+    color: #dc3545;
+}
+</style>
 {% endblock %}
 
-{% block extra_js %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% block content %}
+<div class="container-fluid mt-4">
+    <h2 class="mb-4">Dashboard Financeiro</h2>
+
+    <!-- Key Metrics Row -->
+    <div class="row">
+        <div class="col-md-3">
+            <div class="dashboard-card">
+                <div class="metric-label">Saldo Total</div>
+                <div class="metric-value">
+                    R$ {{ "%.2f"|format(totals.recebidos - totals.enviados)|replace('.', ',') }}
+                </div>
+                <div class="trend-indicator trend-up">
+                    <i class="fas fa-arrow-up"></i> 12%
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="dashboard-card">
+                <div class="metric-label">Total Recebido</div>
+                <div class="metric-value text-success">
+                    R$ {{ "%.2f"|format(totals.pix_recebido + totals.ted_recebida)|replace('.', ',') }}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="dashboard-card">
+                <div class="metric-label">Total Enviado</div>
+                <div class="metric-value text-danger">
+                    R$ {{ "%.2f"|format(totals.pix_enviado + totals.ted_enviada)|replace('.', ',') }}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="dashboard-card">
+                <div class="metric-label">Despesas Operacionais</div>
+                <div class="metric-value text-warning">
+                    R$ {{ "%.2f"|format(totals.juros + totals.iof)|replace('.', ',') }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="row mt-4">
+        <div class="col-md-6">
+            <div class="dashboard-card">
+                <h5>Fluxo de Caixa</h5>
+                <div class="chart-container">
+                    <canvas id="cashFlowChart"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="dashboard-card">
+                <h5>Distribuição de Despesas</h5>
+                <div class="chart-container">
+                    <canvas id="expensesChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Transaction Analysis Row -->
+    <div class="row mt-4">
+        <div class="col-md-8">
+            <div class="dashboard-card">
+                <h5>Tendências de Transações</h5>
+                <div class="chart-container">
+                    <canvas id="transactionTrendsChart"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="dashboard-card">
+                <h5>Top CNPJs</h5>
+                <div class="chart-container">
+                    <canvas id="topCNPJsChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Fetch and create charts
-    fetch('/api/dashboard_data')
-        .then(response => response.json())
-        .then(data => {
-            createExpensesChart(data.expenses_by_category);
-            createMonthlyChart(data.monthly_data);
-        });
+// Cash Flow Chart
+new Chart(document.getElementById('cashFlowChart'), {
+    type: 'line',
+    data: {
+        labels: ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun'],
+        datasets: [{
+            label: 'Recebimentos',
+            data: [12000, 19000, 15000, 25000, 22000, 30000],
+            borderColor: '#28a745',
+            tension: 0.4
+        }, {
+            label: 'Pagamentos',
+            data: [10000, 15000, 12000, 20000, 18000, 25000],
+            borderColor: '#dc3545',
+            tension: 0.4
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false
+    }
 });
 
-function createExpensesChart(data) {
-    const ctx = document.getElementById('expensesChart').getContext('2d');
-    new Chart(ctx, {
-        type: 'pie',
-        data: {
-            labels: data.labels,
-            datasets: [{
-                data: data.values,
-                backgroundColor: [
-                    '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
-                    '#FF9F40', '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0'
-                ]
-            }]
-        },
-        options: {
-            responsive: true,
-            plugins: {
-                legend: {
-                    position: 'right',
-                }
-            }
-        }
-    });
-}
+// Expenses Distribution Chart
+new Chart(document.getElementById('expensesChart'), {
+    type: 'doughnut',
+    data: {
+        labels: ['PIX', 'TED', 'Pagamentos', 'Taxas', 'Outros'],
+        datasets: [{
+            data: [30, 20, 25, 15, 10],
+            backgroundColor: [
+                '#28a745',
+                '#007bff',
+                '#ffc107',
+                '#dc3545',
+                '#6c757d'
+            ]
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false
+    }
+});
 
-function createMonthlyChart(data) {
-    const ctx = document.getElementById('monthlyChart').getContext('2d');
-    new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: data.months,
-            datasets: [{
-                label: 'Receitas',
-                data: data.income,
-                borderColor: '#28a745',
-                fill: false
-            }, {
-                label: 'Despesas',
-                data: data.expenses,
-                borderColor: '#dc3545',
-                fill: false
-            }]
-        },
-        options: {
-            responsive: true,
-            scales: {
-                y: {
-                    beginAtZero: true
-                }
-            }
-        }
-    });
-}
+// Transaction Trends Chart
+new Chart(document.getElementById('transactionTrendsChart'), {
+    type: 'bar',
+    data: {
+        labels: ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun'],
+        datasets: [{
+            label: 'Volume de Transações',
+            data: [65, 59, 80, 81, 56, 55],
+            backgroundColor: '#007bff'
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false
+    }
+});
+
+// Top CNPJs Chart
+new Chart(document.getElementById('topCNPJsChart'), {
+    type: 'pie',
+    data: {
+        labels: ['CNPJ 1', 'CNPJ 2', 'CNPJ 3', 'CNPJ 4', 'Outros'],
+        datasets: [{
+            data: [30, 25, 20, 15, 10],
+            backgroundColor: [
+                '#28a745',
+                '#007bff',
+                '#ffc107',
+                '#dc3545',
+                '#6c757d'
+            ]
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false
+    }
+});
 </script>
 {% endblock %}

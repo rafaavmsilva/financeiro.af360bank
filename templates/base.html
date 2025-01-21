@@ -38,6 +38,11 @@
                     </a>
                 </li>
                 <li class="nav-item">
+                    <a class="nav-link {{ 'active' if active_page == 'dashboard' }}" href="{{ url_for('dashboard') }}">
+                        <i class="fas fa-chart-line"></i> Dashboard
+                    </a>
+                </li>
+                <li class="nav-item">
                     <a class="nav-link {{ 'active' if active_page == 'recebidos' }}" href="{{ url_for('recebidos') }}">
                         <i class="fas fa-money-bill-wave"></i> Recebidos
                     </a>
