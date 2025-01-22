@@ -734,13 +734,17 @@ def dashboard():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Calculate totals with correct columns
+    # Calculate totals
     cursor.execute('''
         SELECT 
             (SELECT COALESCE(SUM(value), 0) FROM transactions WHERE value > 0) as total_received,
             (SELECT COALESCE(SUM(ABS(value)), 0) FROM transactions WHERE value < 0) as total_sent,
             (SELECT COALESCE(SUM(ABS(value)), 0) FROM transactions WHERE type = 'JUROS') as juros,
-            (SELECT COALESCE(SUM(ABS(value)), 0) FROM transactions WHERE type = 'IOF') as iof
+            (SELECT COALESCE(SUM(ABS(value)), 0) FROM transactions WHERE type = 'IOF') as iof,
+            (SELECT COALESCE(SUM(value), 0) FROM transactions WHERE type = 'PIX RECEBIDO') as pix_recebido,
+            (SELECT COALESCE(SUM(value), 0) FROM transactions WHERE type = 'TED RECEBIDA') as ted_recebida,
+            (SELECT COALESCE(SUM(ABS(value)), 0) FROM transactions WHERE type = 'PIX ENVIADO') as pix_enviado,
+            (SELECT COALESCE(SUM(ABS(value)), 0) FROM transactions WHERE type = 'TED ENVIADA') as ted_enviada
     ''')
     
     row = cursor.fetchone()
@@ -749,20 +753,21 @@ def dashboard():
         'enviados': float(row[1] or 0),
         'juros': float(row[2] or 0),
         'iof': float(row[3] or 0),
-        'pix_recebido': abs(float(row[4] or 0)),
-        'ted_recebida': abs(float(row[5] or 0)),
-        'pix_enviado': abs(float(row[6] or 0)),
-        'ted_enviada': abs(float(row[7] or 0))
+        'pix_recebido': float(row[4] or 0),
+        'ted_recebida': float(row[5] or 0),
+        'pix_enviado': float(row[6] or 0),
+        'ted_enviada': float(row[7] or 0)
     }
 
     # Get monthly data for cash flow
     cursor.execute('''
-        SELECT strftime('%m/%Y', date) as month,
-               SUM(CASE WHEN value > 0 THEN value ELSE 0 END) as received,
-               SUM(CASE WHEN value < 0 THEN ABS(value) ELSE 0 END) as sent
+        SELECT 
+            strftime('%m/%Y', date) as month,
+            COALESCE(SUM(CASE WHEN value > 0 THEN value ELSE 0 END), 0) as received,
+            COALESCE(SUM(CASE WHEN value < 0 THEN ABS(value) ELSE 0 END), 0) as sent
         FROM transactions
         GROUP BY month
-        ORDER BY date DESC
+        ORDER BY date ASC
         LIMIT 6
     ''')
     
@@ -776,7 +781,9 @@ def dashboard():
 
     # Get expenses distribution
     cursor.execute('''
-        SELECT type, SUM(ABS(value)) as total
+        SELECT 
+            type,
+            COALESCE(SUM(ABS(value)), 0) as total
         FROM transactions
         WHERE value < 0
         GROUP BY type
@@ -791,7 +798,9 @@ def dashboard():
 
     # Get top CNPJs with names
     cursor.execute('''
-        SELECT document, SUM(ABS(value)) as total
+        SELECT 
+            document,
+            COALESCE(SUM(ABS(value)), 0) as total
         FROM transactions
         WHERE document IS NOT NULL
         GROUP BY document
