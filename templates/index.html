@@ -148,7 +148,7 @@ function checkProgress(processId) {
             if (data.status === 'completed') {
                 showSuccess('Arquivo processado com sucesso!');
                 setTimeout(() => {
-                    window.location.href = '{{ url_for("index") }}';
+                    window.location.href = '{{ url_for("recebidos") }}';  // Changed redirect to recebidos
                 }, 2000);
             } else if (data.status === 'error') {
                 showError(data.message);
