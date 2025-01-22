@@ -734,36 +734,52 @@ def dashboard():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Calculate totals
+    # Calculate totals with all required fields
     cursor.execute('''
         SELECT 
             (SELECT COALESCE(SUM(value), 0) 
-            FROM transactions 
-            WHERE value > 0) as total_received,
+             FROM transactions 
+             WHERE value > 0) as total_received,
             
             (SELECT COALESCE(SUM(value), 0) 
-            FROM transactions 
-            WHERE value < 0) as total_sent,
+             FROM transactions 
+             WHERE value < 0) as total_sent,
             
             (SELECT COALESCE(SUM(ABS(value)), 0) 
-            FROM transactions 
-            WHERE type = 'JUROS') as juros,
+             FROM transactions 
+             WHERE type = 'JUROS') as juros,
             
             (SELECT COALESCE(SUM(ABS(value)), 0) 
-            FROM transactions 
-            WHERE type = 'IOF') as iof
+             FROM transactions 
+             WHERE type = 'IOF') as iof,
+             
+            (SELECT COALESCE(SUM(value), 0)
+             FROM transactions
+             WHERE type = 'PIX RECEBIDO') as pix_recebido,
+             
+            (SELECT COALESCE(SUM(value), 0)
+             FROM transactions
+             WHERE type = 'TED RECEBIDA') as ted_recebida,
+             
+            (SELECT COALESCE(SUM(ABS(value)), 0)
+             FROM transactions
+             WHERE type = 'PIX ENVIADO') as pix_enviado,
+             
+            (SELECT COALESCE(SUM(ABS(value)), 0)
+             FROM transactions
+             WHERE type = 'TED ENVIADA') as ted_enviada
     ''')
 
     row = cursor.fetchone()
     totals = {
-        'recebidos': abs(float(row[0])),  # Absolute value for received
-        'enviados': abs(float(row[1])),   # Absolute value for sent
-        'juros': float(row[2]),
-        'iof': float(row[3]),
-        'pix_recebido': float(row[4] or 0),
-        'ted_recebida': float(row[5] or 0),
-        'pix_enviado': float(row[6] or 0),
-        'ted_enviada': float(row[7] or 0)
+        'recebidos': abs(float(row[0] or 0)),  # Total received
+        'enviados': abs(float(row[1] or 0)),   # Total sent
+        'juros': float(row[2] or 0),
+        'iof': float(row[3] or 0),
+        'pix_recebido': abs(float(row[4] or 0)),
+        'ted_recebida': abs(float(row[5] or 0)),
+        'pix_enviado': abs(float(row[6] or 0)),
+        'ted_enviada': abs(float(row[7] or 0))
     }
 
     # Get monthly data for cash flow
