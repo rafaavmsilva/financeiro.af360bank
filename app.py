@@ -734,46 +734,19 @@ def dashboard():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Calculate totals with all required fields
+    # Calculate totals
     cursor.execute('''
         SELECT 
-            (SELECT COALESCE(SUM(value), 0) 
-             FROM transactions 
-             WHERE value > 0) as total_received,
-            
-            (SELECT COALESCE(SUM(value), 0) 
-             FROM transactions 
-             WHERE value < 0) as total_sent,
-            
-            (SELECT COALESCE(SUM(ABS(value)), 0) 
-             FROM transactions 
-             WHERE type = 'JUROS') as juros,
-            
-            (SELECT COALESCE(SUM(ABS(value)), 0) 
-             FROM transactions 
-             WHERE type = 'IOF') as iof,
-             
-            (SELECT COALESCE(SUM(value), 0)
-             FROM transactions
-             WHERE type = 'PIX RECEBIDO') as pix_recebido,
-             
-            (SELECT COALESCE(SUM(value), 0)
-             FROM transactions
-             WHERE type = 'TED RECEBIDA') as ted_recebida,
-             
-            (SELECT COALESCE(SUM(ABS(value)), 0)
-             FROM transactions
-             WHERE type = 'PIX ENVIADO') as pix_enviado,
-             
-            (SELECT COALESCE(SUM(ABS(value)), 0)
-             FROM transactions
-             WHERE type = 'TED ENVIADA') as ted_enviada
+            (SELECT COALESCE(SUM(value), 0) FROM transactions WHERE value > 0) as total_received,
+            (SELECT COALESCE(SUM(ABS(value)), 0) FROM transactions WHERE value < 0) as total_sent,
+            (SELECT COALESCE(SUM(ABS(value)), 0) FROM transactions WHERE type = 'JUROS') as juros,
+            (SELECT COALESCE(SUM(ABS(value)), 0) FROM transactions WHERE type = 'IOF') as iof
     ''')
-
+    
     row = cursor.fetchone()
     totals = {
-        'recebidos': abs(float(row[0] or 0)),  # Total received
-        'enviados': abs(float(row[1] or 0)),   # Total sent
+        'recebidos': float(row[0] or 0),
+        'enviados': float(row[1] or 0),
         'juros': float(row[2] or 0),
         'iof': float(row[3] or 0),
         'pix_recebido': abs(float(row[4] or 0)),
