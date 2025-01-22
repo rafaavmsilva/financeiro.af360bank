@@ -737,23 +737,29 @@ def dashboard():
     # Calculate totals
     cursor.execute('''
         SELECT 
-            SUM(CASE WHEN value > 0 THEN value ELSE 0 END) as received,
-            SUM(CASE WHEN value < 0 THEN ABS(value) ELSE 0 END) as sent,
-            SUM(CASE WHEN type = 'JUROS' THEN ABS(value) ELSE 0 END) as juros,
-            SUM(CASE WHEN type = 'IOF' THEN ABS(value) ELSE 0 END) as iof,
-            SUM(CASE WHEN type = 'PIX RECEBIDO' THEN value ELSE 0 END) as pix_recebido,
-            SUM(CASE WHEN type = 'TED RECEBIDA' THEN value ELSE 0 END) as ted_recebida,
-            SUM(CASE WHEN type = 'PIX ENVIADO' THEN ABS(value) ELSE 0 END) as pix_enviado,
-            SUM(CASE WHEN type = 'TED ENVIADA' THEN ABS(value) ELSE 0 END) as ted_enviada
-        FROM transactions
+            (SELECT COALESCE(SUM(value), 0) 
+            FROM transactions 
+            WHERE value > 0) as total_received,
+            
+            (SELECT COALESCE(SUM(value), 0) 
+            FROM transactions 
+            WHERE value < 0) as total_sent,
+            
+            (SELECT COALESCE(SUM(ABS(value)), 0) 
+            FROM transactions 
+            WHERE type = 'JUROS') as juros,
+            
+            (SELECT COALESCE(SUM(ABS(value)), 0) 
+            FROM transactions 
+            WHERE type = 'IOF') as iof
     ''')
-    
+
     row = cursor.fetchone()
     totals = {
-        'recebidos': float(row[0] or 0),
-        'enviados': float(row[1] or 0),
-        'juros': float(row[2] or 0),
-        'iof': float(row[3] or 0),
+        'recebidos': abs(float(row[0])),  # Absolute value for received
+        'enviados': abs(float(row[1])),   # Absolute value for sent
+        'juros': float(row[2]),
+        'iof': float(row[3]),
         'pix_recebido': float(row[4] or 0),
         'ted_recebida': float(row[5] or 0),
         'pix_enviado': float(row[6] or 0),
