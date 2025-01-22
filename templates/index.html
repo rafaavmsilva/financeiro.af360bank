@@ -8,53 +8,108 @@
                 <div class="card-body">
                     <h5 class="card-title">Upload de Arquivo</h5>
                     
-                    <!-- Progress bar (inicialmente oculta) -->
-                    <div id="uploadProgress" class="mb-4" style="display: none;">
-                        <div class="progress mb-2">
-                            <div class="progress-bar progress-bar-striped progress-bar-animated" 
-                                 role="progressbar" 
-                                 style="width: 0%" 
-                                 aria-valuenow="0" 
-                                 aria-valuemin="0" 
-                                 aria-valuemax="100">0%</div>
+                    <!-- Bank Selection -->
+                    <div class="mb-4">
+                        <label class="form-label d-block">Selecione o Banco</label>
+                        <div class="bank-buttons">
+                            <button type="button" class="btn btn-outline-primary bank-select" data-bank="santander">
+                                <img src="{{ url_for('static', filename='images/santander.png') }}" alt="Santander" class="bank-icon">
+                                <span>Santander</span>
+                            </button>
                         </div>
-                        <p id="progressMessage" class="text-muted small">Iniciando...</p>
                     </div>
                     
-                    <!-- Alert para mensagens -->
-                    <div id="alertMessage" class="alert" style="display: none;" role="alert"></div>
-                    
-                    <!-- Form de upload -->
-                    <form id="uploadForm" action="{{ url_for('upload_file') }}" method="post" enctype="multipart/form-data">
-                        <div class="mb-3">
-                            <label for="file" class="form-label">Selecione o arquivo Excel</label>
-                            <input type="file" class="form-control" id="file" name="file" accept=".xls,.xlsx">
+                    <!-- Upload Section -->
+                    <div id="uploadSection" style="display: none;">
+                        <div id="uploadProgress" class="mb-4" style="display: none;">
+                            <div class="progress mb-2">
+                                <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                     role="progressbar" 
+                                     style="width: 0%" 
+                                     aria-valuenow="0" 
+                                     aria-valuemin="0" 
+                                     aria-valuemax="100">0%</div>
+                            </div>
+                            <p id="progressMessage" class="text-muted small">Iniciando...</p>
                         </div>
-                        <button type="submit" class="btn btn-primary">Enviar</button>
-                    </form>
+                        
+                        <div id="alertMessage" class="alert" style="display: none;" role="alert"></div>
+                        
+                        <form id="uploadForm" action="{{ url_for('upload_file') }}" method="post" enctype="multipart/form-data">
+                            <input type="hidden" id="bankType" name="bank_type" value="">
+                            <div class="mb-3">
+                                <label for="file" class="form-label">Selecione o arquivo Excel</label>
+                                <input type="file" class="form-control" id="file" name="file" accept=".xls,.xlsx">
+                            </div>
+                            <button type="submit" class="btn btn-primary">Enviar</button>
+                        </form>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 </div>
 
+<style>
+.bank-buttons {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.bank-select {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 20px;
+    border: 2px solid #dee2e6;
+    transition: all 0.3s ease;
+}
+
+.bank-select:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.bank-select.active {
+    border-color: #0d6efd;
+    background-color: #f8f9fa;
+}
+
+.bank-icon {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
+}
+</style>
+
 <script>
+// Bank selection handler
+document.querySelectorAll('.bank-select').forEach(button => {
+    button.addEventListener('click', function() {
+        const bankType = this.dataset.bank;
+        document.getElementById('bankType').value = bankType;
+        document.getElementById('uploadSection').style.display = 'block';
+        
+        document.querySelectorAll('.bank-select').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        this.classList.add('active');
+    });
+});
+
+// Form submission handler
 document.getElementById('uploadForm').addEventListener('submit', function(e) {
     e.preventDefault();
     
     const formData = new FormData(this);
-    const progressBar = document.querySelector('.progress-bar');
-    const progressDiv = document.getElementById('uploadProgress');
-    const progressMessage = document.getElementById('progressMessage');
-    const alertDiv = document.getElementById('alertMessage');
-    const submitButton = this.querySelector('button[type="submit"]');
+    const uploadProgress = document.getElementById('uploadProgress');
+    const alertMessage = document.getElementById('alertMessage');
     
-    // Mostra barra de progresso e desabilita botão
-    progressDiv.style.display = 'block';
-    submitButton.disabled = true;
-    alertDiv.style.display = 'none';
+    // Show progress bar
+    uploadProgress.style.display = 'block';
+    alertMessage.style.display = 'none';
     
-    // Envia o arquivo
     fetch('{{ url_for("upload_file") }}', {
         method: 'POST',
         body: formData
@@ -62,9 +117,7 @@ document.getElementById('uploadForm').addEventListener('submit', function(e) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            // Inicia polling do progresso
-            const processId = data.process_id;
-            checkProgress(processId);
+            checkProgress(data.process_id);
         } else {
             showError('Erro ao enviar arquivo: ' + data.message);
         }
@@ -74,6 +127,7 @@ document.getElementById('uploadForm').addEventListener('submit', function(e) {
     });
 });
 
+// Progress checking function
 function checkProgress(processId) {
     const progressBar = document.querySelector('.progress-bar');
     const progressMessage = document.getElementById('progressMessage');
@@ -93,12 +147,13 @@ function checkProgress(processId) {
             
             if (data.status === 'completed') {
                 showSuccess('Arquivo processado com sucesso!');
-                setTimeout(() => window.location.href = '{{ url_for("recebidos") }}', 1000);
+                setTimeout(() => {
+                    window.location.href = '{{ url_for("index") }}';
+                }, 2000);
             } else if (data.status === 'error') {
                 showError(data.message);
             } else {
-                // Continua verificando o progresso
-                setTimeout(() => checkProgress(processId), 500);
+                setTimeout(() => checkProgress(processId), 1000);
             }
         })
         .catch(error => {
@@ -106,21 +161,21 @@ function checkProgress(processId) {
         });
 }
 
+// Error display function
 function showError(message) {
-    const alertDiv = document.getElementById('alertMessage');
-    const submitButton = document.querySelector('button[type="submit"]');
-    
-    alertDiv.className = 'alert alert-danger';
-    alertDiv.textContent = message;
-    alertDiv.style.display = 'block';
-    submitButton.disabled = false;
+    const alertMessage = document.getElementById('alertMessage');
+    alertMessage.className = 'alert alert-danger';
+    alertMessage.textContent = message;
+    alertMessage.style.display = 'block';
+    document.getElementById('uploadProgress').style.display = 'none';
 }
 
+// Success display function
 function showSuccess(message) {
-    const alertDiv = document.getElementById('alertMessage');
-    alertDiv.className = 'alert alert-success';
-    alertDiv.textContent = message;
-    alertDiv.style.display = 'block';
+    const alertMessage = document.getElementById('alertMessage');
+    alertMessage.className = 'alert alert-success';
+    alertMessage.textContent = message;
+    alertMessage.style.display = 'block';
 }
 </script>
 {% endblock %}
