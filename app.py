@@ -734,7 +734,7 @@ def dashboard():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Calculate totals
+    # Calculate totals with correct columns
     cursor.execute('''
         SELECT 
             (SELECT COALESCE(SUM(value), 0) FROM transactions WHERE value > 0) as total_received,
