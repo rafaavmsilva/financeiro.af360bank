@@ -14,7 +14,6 @@
                         <div class="bank-buttons">
                             <button type="button" class="btn btn-outline-primary bank-select" data-bank="santander">
                                 <img src="{{ url_for('static', filename='images/Santander.png') }}" alt="Santander" class="bank-icon">
-                                <span>Santander</span>
                             </button>
                         </div>
                     </div>
@@ -61,11 +60,13 @@
 .bank-select {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 12px 24px;
+    justify-content: center;
+    padding: 0;
     border: 2px solid #dee2e6;
     transition: all 0.3s ease;
     width: 200px;
+    height: 80px;
+    overflow: hidden;
 }
 
 .bank-select:hover {
@@ -79,19 +80,14 @@
 }
 
 .bank-icon {
-    width: 32px;
-    height: 32px;
+    width: 100%;
+    height: 100%;
     object-fit: contain;
-}
-
-.bank-select span {
-    font-weight: 500;
-    color: #333;
+    padding: 10px;
 }
 </style>
 
 <script>
-// Bank selection handler
 document.querySelectorAll('.bank-select').forEach(button => {
     button.addEventListener('click', function() {
         const bankType = this.dataset.bank;
@@ -105,7 +101,6 @@ document.querySelectorAll('.bank-select').forEach(button => {
     });
 });
 
-// Form submission handler
 document.getElementById('uploadForm').addEventListener('submit', function(e) {
     e.preventDefault();
     
@@ -133,7 +128,6 @@ document.getElementById('uploadForm').addEventListener('submit', function(e) {
     });
 });
 
-// Progress checking function
 function checkProgress(processId) {
     const progressBar = document.querySelector('.progress-bar');
     const progressMessage = document.getElementById('progressMessage');
@@ -167,7 +161,6 @@ function checkProgress(processId) {
         });
 }
 
-// Error display function
 function showError(message) {
     const alertMessage = document.getElementById('alertMessage');
     alertMessage.className = 'alert alert-danger';
@@ -176,7 +169,6 @@ function showError(message) {
     document.getElementById('uploadProgress').style.display = 'none';
 }
 
-// Success display function
 function showSuccess(message) {
     const alertMessage = document.getElementById('alertMessage');
     alertMessage.className = 'alert alert-success';
