@@ -13,7 +13,7 @@
                         <label class="form-label d-block">Selecione o Banco</label>
                         <div class="bank-buttons">
                             <button type="button" class="btn btn-outline-primary bank-select" data-bank="santander">
-                                <img src="{{ url_for('static', filename='images/santander.png') }}" alt="Santander" class="bank-icon">
+                                <img src="{{ url_for('static', filename='images/Santander.png') }}" alt="Santander" class="bank-icon">
                                 <span>Santander</span>
                             </button>
                         </div>
@@ -55,15 +55,17 @@
     display: flex;
     gap: 10px;
     flex-wrap: wrap;
+    justify-content: center;
 }
 
 .bank-select {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 10px 20px;
+    padding: 12px 24px;
     border: 2px solid #dee2e6;
     transition: all 0.3s ease;
+    width: 200px;
 }
 
 .bank-select:hover {
@@ -72,14 +74,19 @@
 }
 
 .bank-select.active {
-    border-color: #0d6efd;
-    background-color: #f8f9fa;
+    border-color: #ec0000;
+    background-color: #fff;
 }
 
 .bank-icon {
-    width: 24px;
-    height: 24px;
+    width: 32px;
+    height: 32px;
     object-fit: contain;
+}
+
+.bank-select span {
+    font-weight: 500;
+    color: #333;
 }
 </style>
 
@@ -106,7 +113,6 @@ document.getElementById('uploadForm').addEventListener('submit', function(e) {
     const uploadProgress = document.getElementById('uploadProgress');
     const alertMessage = document.getElementById('alertMessage');
     
-    // Show progress bar
     uploadProgress.style.display = 'block';
     alertMessage.style.display = 'none';
     
@@ -148,7 +154,7 @@ function checkProgress(processId) {
             if (data.status === 'completed') {
                 showSuccess('Arquivo processado com sucesso!');
                 setTimeout(() => {
-                    window.location.href = '{{ url_for("recebidos") }}';  // Changed redirect to recebidos
+                    window.location.href = '{{ url_for("recebidos") }}';
                 }, 2000);
             } else if (data.status === 'error') {
                 showError(data.message);
