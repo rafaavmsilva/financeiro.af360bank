@@ -1,21 +1,89 @@
 from .base import BankReader
 import pandas as pd
-import re
 import os
-from datetime import datetime
 
 class ItauReader(BankReader):
     def __init__(self):
         super().__init__()
         self.name = "Itaú"
-        self.column_mapping = {
-            'data': ['data', 'Data', 'DATA'],
-            'descricao': ['lançamento', 'lancamento', 'LANCAMENTO'],
-            'valor': ['valor (R$)', 'valor', 'VALOR']
-        }
-
+    
     def get_bank_name(self):
         return self.name
+
+    def find_data_start(self, df):
+        for idx, row in df.iterrows():
+            if any(str(val).strip().lower() == 'data' for val in row if pd.notna(val)):
+                return idx
+        return None
+
+    def process_file(self, filepath, process_id, upload_progress):
+        try:
+            df = pd.read_excel(filepath)
+            data_start = self.find_data_start(df)
+            
+            if data_start is None:
+                raise ValueError("Header não encontrado")
+            
+            df = pd.read_excel(filepath, skiprows=data_start)
+            df.columns = ['data', 'lancamento', 'ag_origem', 'valor', 'saldo']
+            df = df[df['valor'].notna()]
+            
+            total_rows = len(df)
+            processed_rows = 0
+            conn = self.get_db_connection()
+            cursor = conn.cursor()
+
+            for start_idx in range(0, total_rows, self.batch_size):
+                end_idx = min(start_idx + self.batch_size, total_rows)
+                batch = df.iloc[start_idx:end_idx]
+
+                for _, row in batch.iterrows():
+                    try:
+                        date = self.parse_date(row['data'])
+                        if not date:
+                            continue
+                            
+                        description = str(row['lancamento']).strip()
+                        value = float(str(row['valor']).replace('.', '').replace(',', '.'))
+                        
+                        cursor.execute('''
+                            INSERT INTO transactions 
+                            (date, description, value, type, transaction_type)
+                            VALUES (?, ?, ?, ?, ?)
+                        ''', (
+                            date.strftime('%Y-%m-%d'),
+                            description,
+                            value,
+                            'receita' if value > 0 else 'despesa',
+                            self.determine_transaction_type(description, value)
+                        ))
+                        processed_rows += 1
+
+                    except Exception as e:
+                        print(f"Erro na linha: {str(e)}")
+                        continue
+
+                conn.commit()
+                upload_progress[process_id].update({
+                    'current': start_idx + len(batch),
+                    'total': total_rows,
+                    'message': f'Processando... {processed_rows}/{total_rows}'
+                })
+
+            conn.close()
+            os.remove(filepath)
+            
+            upload_progress[process_id].update({
+                'status': 'completed',
+                'message': f'Concluído: {processed_rows} transações'
+            })
+            
+            return True
+
+        except Exception as e:
+            if 'conn' in locals():
+                conn.close()
+            raise
 
     def determine_transaction_type(self, description, value):
         description = description.upper()
@@ -23,114 +91,4 @@ class ItauReader(BankReader):
             return 'PIX RECEBIDO' if value > 0 else 'PIX ENVIADO'
         elif 'TED' in description:
             return 'TED RECEBIDA' if value > 0 else 'TED ENVIADA'
-        elif 'SISPAG' in description:
-            return 'PAGAMENTO'
-        elif 'TAR' in description or 'TAXA' in description:
-            return 'TARIFA'
-        elif 'CH COMPENSADO' in description:
-            return 'CHEQUE'
-        elif 'MOV TIT' in description:
-            return 'RECEITA' if value > 0 else 'DESPESA'
         return 'OUTROS'
-
-    def process_file(self, filepath, process_id, upload_progress):
-        try:
-            # Read Excel with all rows
-            df = pd.read_excel(filepath)
-            
-            # Find data start (where column headers begin)
-            data_start = None
-            for idx, row in df.iterrows():
-                if 'data' in str(row[0]).lower():
-                    data_start = idx
-                    break
-                    
-            if data_start is None:
-                raise ValueError("Não foi possível encontrar o início dos dados")
-                
-            # Read data with correct header
-            df = pd.read_excel(filepath, skiprows=data_start)
-            df.columns = ['data', 'lancamento', 'ag_origem', 'valor', 'saldo']
-            
-            # Remove balance rows and empty rows
-            df = df[
-                ~df['lancamento'].astype(str).str.contains('SALDO', case=False, na=False) & 
-                df['valor'].notna()
-            ]
-            
-            total_rows = len(df)
-            processed_rows = 0
-            
-            # Initialize progress
-            upload_progress[process_id].update({
-                'status': 'processing',
-                'current': 0,
-                'total': total_rows,
-                'message': 'Iniciando processamento...'
-            })
-
-            conn = self.get_db_connection()
-            cursor = conn.cursor()
-
-            for index, row in df.iterrows():
-                try:
-                    # Update progress
-                    upload_progress[process_id].update({
-                        'current': index + 1,
-                        'message': f'Processando linha {index + 1} de {total_rows}'
-                    })
-
-                    # Process date
-                    date = pd.to_datetime(row['data']).date()
-                    
-                    # Process description
-                    description = str(row['lancamento']).strip()
-                    
-                    # Process value
-                    value = float(str(row['valor']).replace('.', '').replace(',', '.'))
-                    
-                    # Determine transaction type
-                    transaction_type = self.determine_transaction_type(description, value)
-
-                    # Insert transaction
-                    cursor.execute('''
-                        INSERT INTO transactions 
-                        (date, description, value, type, transaction_type)
-                        VALUES (?, ?, ?, ?, ?)
-                    ''', (
-                        date.strftime('%Y-%m-%d'),
-                        description,
-                        value,
-                        'receita' if value > 0 else 'despesa',
-                        transaction_type
-                    ))
-
-                    processed_rows += 1
-
-                except Exception as e:
-                    print(f"Erro ao processar linha {index + 1}: {str(e)}")
-                    continue
-
-            conn.commit()
-            conn.close()
-            
-            # Update final status
-            upload_progress[process_id].update({
-                'status': 'completed',
-                'current': total_rows,
-                'message': f'Processamento concluído! {processed_rows} transações importadas.'
-            })
-
-            # Remove temporary file
-            os.remove(filepath)
-            
-            return True
-
-        except Exception as e:
-            upload_progress[process_id].update({
-                'status': 'error',
-                'message': f'Erro: {str(e)}'
-            })
-            if 'conn' in locals():
-                conn.close()
-            raise
