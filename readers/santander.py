@@ -1,14 +1,24 @@
 import os
 import pandas as pd
 from .base import BankReader
-from datetime import datetime
 import re
+from datetime import datetime
 
 class SantanderReader(BankReader):
     def __init__(self):
         super().__init__()
         self.name = "Santander"
-        
+        self.type_mapping = {
+            'PIX RECEBIDO': ['PIX RECEBIDO'],
+            'PIX ENVIADO': ['PIX ENVIADO'],
+            'TED RECEBIDA': ['TED RECEBIDA', 'TED CREDIT'],
+            'TED ENVIADA': ['TED ENVIADA', 'TED DEBIT'],
+            'PAGAMENTO': ['PAGAMENTO', 'PGTO', 'PAG'],
+            'TARIFA': ['TARIFA', 'TAR'],
+            'IOF': ['IOF'],
+            'RESGATE': ['RESGATE']
+        }
+
     def get_bank_name(self):
         return self.name
 
@@ -17,7 +27,29 @@ class SantanderReader(BankReader):
             if name in df.columns:
                 return name
         return None
+
+    def find_data_start(self, df):
+        for idx, row in df.iterrows():
+            if any(str(val).strip() == 'Data' for val in row if pd.notna(val)):
+                return idx + 1
+        return None
+
+    def determine_transaction_type(self, description, value):
+        description_upper = description.upper()
         
+        # Check type mapping first
+        for tipo, keywords in self.type_mapping.items():
+            if any(keyword in description_upper for keyword in keywords):
+                return tipo
+        
+        # Default types based on transaction
+        if 'PIX' in description_upper:
+            return 'PIX RECEBIDO' if value > 0 else 'PIX ENVIADO'
+        elif 'TED' in description_upper:
+            return 'TED RECEBIDA' if value > 0 else 'TED ENVIADA'
+        
+        return 'CREDITO' if value > 0 else 'DEBITO'
+
     def process_file(self, filepath, process_id, upload_progress):
         try:
             print(f"Iniciando processamento do arquivo: {filepath}")
@@ -59,9 +91,9 @@ class SantanderReader(BankReader):
                             
                         value_str = str(row['Valor']).replace('R$', '').strip()
                         value = float(value_str.replace('.', '').replace(',', '.'))
+                        document = str(row['Documento']).strip()
                         
                         transaction_type = self.determine_transaction_type(description, value)
-                        document = str(row['Documento']).strip()
                         
                         cursor.execute('''
                             INSERT INTO transactions 
@@ -78,7 +110,7 @@ class SantanderReader(BankReader):
                         
                         processed_rows += 1
                         
-                        if processed_rows % 10 == 0:  # Update progress every 10 rows
+                        if processed_rows % 10 == 0:
                             upload_progress[process_id].update({
                                 'current': processed_rows,
                                 'total': total_rows,
