@@ -14,6 +14,8 @@ from requests.packages.urllib3.util.retry import Retry
 import uuid
 import threading
 from auth_client import AuthClient
+from readers.santander import SantanderReader
+from readers.itau import ItauReader
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here'
@@ -172,27 +174,22 @@ def upload_file():
     try:
         if not session.get('authenticated'):
             return redirect('https://af360bank.onrender.com/login')
+        
         if 'file' not in request.files:
-            return jsonify({
-                'success': False,
-                'message': 'Nenhum arquivo selecionado'
-            })
+            return jsonify({'success': False, 'message': 'Nenhum arquivo selecionado'})
         
         file = request.files['file']
+        bank_type = request.form.get('bank_type')
+        
         if file.filename == '':
-            return jsonify({
-                'success': False,
-                'message': 'Nenhum arquivo selecionado'
-            })
+            return jsonify({'success': False, 'message': 'Nenhum arquivo selecionado'})
         
         if file and allowed_file(file.filename):
             filename = secure_filename(file.filename)
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            
-            # Salva o arquivo
             file.save(filepath)
             
-            # Inicializa o progresso
+            # Initialize progress
             process_id = str(uuid.uuid4())
             upload_progress[process_id] = {
                 'status': 'processing',
@@ -201,8 +198,19 @@ def upload_file():
                 'message': 'Iniciando processamento...'
             }
             
-            # Processa o arquivo em uma thread separada
-            thread = threading.Thread(target=process_file_with_progress, args=(filepath, process_id))
+            # Select reader based on bank type
+            if bank_type == 'santander':
+                reader = SantanderReader()
+            elif bank_type == 'itau':
+                reader = ItauReader()
+            else:
+                return jsonify({'success': False, 'message': 'Banco não suportado'})
+            
+            # Process file in separate thread
+            thread = threading.Thread(
+                target=reader.process_file, 
+                args=(filepath, process_id, upload_progress)
+            )
             thread.start()
             
             return jsonify({
@@ -211,15 +219,10 @@ def upload_file():
                 'message': 'Arquivo enviado e sendo processado'
             })
         
-        return jsonify({
-            'success': False,
-            'message': 'Tipo de arquivo não permitido'
-        })
+        return jsonify({'success': False, 'message': 'Tipo de arquivo não permitido'})
+        
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'Erro ao processar arquivo: {str(e)}'
-        })
+        return jsonify({'success': False, 'message': f'Erro ao processar arquivo: {str(e)}'})
 
 def find_matching_column(df, column_names):
     for col in df.columns:

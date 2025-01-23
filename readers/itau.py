@@ -1,88 +1,78 @@
 from .base import BankReader
 import pandas as pd
 import re
+import os
 from datetime import datetime
 
 class ItauReader(BankReader):
-    def __init__(self):
-        super().__init__()
-        self.name = "Itaú"
-
     def process_file(self, filepath, process_id, upload_progress):
         try:
-            # Read Excel file skipping header rows
-            df = pd.read_excel(filepath, header=None)
+            # Read Excel with all rows
+            df = pd.read_excel(filepath)
             
-            # Find the header row (where 'data' appears)
-            header_row = df[df[0].astype(str).str.contains('data', case=False)].index[0]
-            
-            # Read data after header row
-            df = pd.read_excel(filepath, skiprows=header_row)
-            
-            # Rename columns
+            # Find data start (where column headers begin)
+            data_start = None
+            for idx, row in df.iterrows():
+                if 'data' in str(row[0]).lower():
+                    data_start = idx
+                    break
+                    
+            if data_start is None:
+                raise ValueError("Não foi possível encontrar o início dos dados")
+                
+            # Read data with correct header
+            df = pd.read_excel(filepath, skiprows=data_start)
             df.columns = ['data', 'lancamento', 'ag_origem', 'valor', 'saldo']
             
-            # Remove balance rows
-            df = df[~df['lancamento'].astype(str).str.contains('SALDO', case=False, na=False)]
+            # Remove balance rows and empty rows
+            df = df[
+                ~df['lancamento'].astype(str).str.contains('SALDO', case=False, na=False) & 
+                df['valor'].notna()
+            ]
             
+            # Process transactions
             total_rows = len(df)
             processed_rows = 0
-            
-            # Initialize progress
-            upload_progress[process_id] = {
-                'status': 'processing',
-                'current': 0,
-                'total': total_rows,
-                'message': 'Processando arquivo...'
-            }
             
             conn = self.get_db_connection()
             cursor = conn.cursor()
             
             for index, row in df.iterrows():
                 try:
-                    # Update progress
-                    upload_progress[process_id]['current'] = index + 1
-                    upload_progress[process_id]['message'] = f'Processando linha {index + 1} de {total_rows}'
+                    upload_progress[process_id].update({
+                        'current': index + 1,
+                        'total': total_rows,
+                        'message': f'Processando linha {index + 1} de {total_rows}'
+                    })
                     
-                    # Skip empty or invalid rows
-                    if pd.isna(row['data']) or pd.isna(row['valor']):
-                        continue
-                    
-                    # Process date
                     date = pd.to_datetime(row['data']).date()
-                    
-                    # Process description
                     description = str(row['lancamento']).strip()
+                    value = float(str(row['valor']).replace('.', '').replace(',', '.'))
                     
-                    # Process value (already in correct format for Itaú)
-                    value = float(row['valor'])
-                    
-                    # Determine transaction type
                     transaction_type = self.determine_transaction_type(description, value)
                     
-                    # Insert into database
                     cursor.execute('''
-                        INSERT INTO transactions (date, description, value, type, transaction_type)
+                        INSERT INTO transactions 
+                        (date, description, value, type, transaction_type) 
                         VALUES (?, ?, ?, ?, ?)
                     ''', (
                         date.strftime('%Y-%m-%d'),
                         description,
                         value,
-                        transaction_type,
-                        'receita' if value > 0 else 'despesa'
+                        'receita' if value > 0 else 'despesa',
+                        transaction_type
                     ))
                     
                     processed_rows += 1
                     
                 except Exception as e:
-                    print(f"Erro na linha {index + 1}: {str(e)}")
+                    print(f"Erro na linha {index}: {str(e)}")
                     continue
             
             conn.commit()
             conn.close()
+            os.remove(filepath)
             
-            # Update final status
             upload_progress[process_id].update({
                 'status': 'completed',
                 'current': total_rows,
@@ -92,7 +82,10 @@ class ItauReader(BankReader):
             return True
             
         except Exception as e:
-            print(f"Erro no processamento: {str(e)}")
+            upload_progress[process_id].update({
+                'status': 'error',
+                'message': f'Erro: {str(e)}'
+            })
             if 'conn' in locals():
                 conn.close()
             raise
