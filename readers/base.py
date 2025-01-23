@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 import sqlite3
 import pandas as pd
+from datetime import datetime
 
 class BankReader(ABC):
     def __init__(self):
@@ -15,14 +16,29 @@ class BankReader(ABC):
     def get_db_connection(self):
         return sqlite3.connect('instance/financas.db', timeout=self.timeout)
 
-    def parse_date(self, date_str):
-        """Common date parsing logic"""
+    def parse_date(self, value):
+        """Enhanced date parsing"""
+        if pd.isna(value):
+            return None
+        
         try:
-            # First try DD/MM/YYYY
-            return pd.to_datetime(date_str, format='%d/%m/%Y', errors='coerce').date()
+            if isinstance(value, str):
+                for fmt in ['%d/%m/%Y', '%Y-%m-%d']:
+                    try:
+                        return datetime.strptime(value.strip(), fmt).date()
+                    except ValueError:
+                        continue
+            return pd.to_datetime(value, dayfirst=True).date()
         except:
+            return None
+
+    def process_batch(self, df, start_idx, end_idx, cursor):
+        """Common batch processing"""
+        processed = 0
+        for idx in range(start_idx, end_idx):
             try:
-                # Then try flexible parsing with dayfirst=True
-                return pd.to_datetime(date_str, dayfirst=True, errors='coerce').date()
-            except:
-                return None
+                yield df.iloc[idx], processed
+                processed += 1
+            except Exception as e:
+                print(f"Error in batch process: {e}")
+                continue
