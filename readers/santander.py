@@ -1,81 +1,66 @@
 import os
 import pandas as pd
 from .base import BankReader
-import gc
+from datetime import datetime
+import re
 
 class SantanderReader(BankReader):
     def __init__(self):
         super().__init__()
         self.name = "Santander"
-        self.batch_size = 20
-        self.max_retries = 3
         
     def get_bank_name(self):
         return self.name
-        
-    def find_data_start(self, df):
-        for idx, row in df.iterrows():
-            if any(str(val).strip() == 'Data' for val in row if pd.notna(val)):
-                return idx + 1
+
+    def find_matching_column(self, df, possible_names):
+        for name in possible_names:
+            if name in df.columns:
+                return name
         return None
-
-    def determine_transaction_type(self, description, value):
-        description = description.upper()
-        if 'PIX' in description:
-            return 'PIX RECEBIDO' if value > 0 else 'PIX ENVIADO'
-        elif 'TED' in description:
-            return 'TED RECEBIDA' if value > 0 else 'TED ENVIADA'
-        elif 'PAGAMENTO' in description:
-            return 'PAGAMENTO'
-        elif 'TARIFA' in description:
-            return 'TARIFA'
-        elif 'IOF' in description:
-            return 'IOF'
-        elif 'RESGATE' in description:
-            return 'RESGATE'
-        return 'OUTROS'
-
+        
     def process_file(self, filepath, process_id, upload_progress):
-        conn = None
         try:
-            # Initialize progress
-            upload_progress[process_id] = {
-                'status': 'processing',
-                'current': 0,
-                'total': 0,
-                'message': 'Iniciando...'
-            }
+            print(f"Iniciando processamento do arquivo: {filepath}")
             
-            # Read file
             df = pd.read_excel(filepath)
             data_start = self.find_data_start(df)
             
             if data_start is None:
                 raise ValueError("Header não encontrado")
             
-            # Process data
             df = df.iloc[data_start:]
             df.columns = ['Data', '', 'Histórico', 'Documento', 'Valor', 'Saldo']
             df = df.drop(['', 'Saldo'], axis=1)
-            df = df[df['Data'].notna()]
-
+            
             total_rows = len(df)
-            total_batches = math.ceil(total_rows / self.batch_size)
             processed_rows = 0
+            
+            upload_progress[process_id].update({
+                'status': 'processing',
+                'current': 0,
+                'total': total_rows,
+                'message': 'Iniciando processamento...'
+            })
             
             conn = self.get_db_connection()
             cursor = conn.cursor()
-
-            for batch_num in range(total_batches):
-                start_idx = batch_num * self.batch_size
-                end_idx = min((batch_num + 1) * self.batch_size, total_rows)
-                batch = df.iloc[start_idx:end_idx].copy()
-
-                for _, row in batch.iterrows():
+            
+            try:
+                for index, row in df.iterrows():
                     try:
+                        if pd.isna(row['Data']):
+                            continue
+                            
                         date = pd.to_datetime(row['Data'], format='%d/%m/%Y').date()
-                        value = float(str(row['Valor']).replace('R$', '').replace('.', '').replace(',', '.'))
                         description = str(row['Histórico']).strip()
+                        
+                        if pd.isna(description) or not description:
+                            continue
+                            
+                        value_str = str(row['Valor']).replace('R$', '').strip()
+                        value = float(value_str.replace('.', '').replace(',', '.'))
+                        
+                        transaction_type = self.determine_transaction_type(description, value)
                         document = str(row['Documento']).strip()
                         
                         cursor.execute('''
@@ -87,32 +72,39 @@ class SantanderReader(BankReader):
                             description,
                             value,
                             'receita' if value > 0 else 'despesa',
-                            self.determine_transaction_type(description, value),
+                            transaction_type,
                             document if document != 'nan' else None
                         ))
+                        
                         processed_rows += 1
+                        
+                        if processed_rows % 10 == 0:  # Update progress every 10 rows
+                            upload_progress[process_id].update({
+                                'current': processed_rows,
+                                'total': total_rows,
+                                'message': f'Processando... {processed_rows}/{total_rows}'
+                            })
+                            conn.commit()
 
                     except Exception as e:
-                        print(f"Erro ao processar linha: {str(e)}")
+                        print(f"Erro ao processar linha {index}: {str(e)}")
                         continue
 
                 conn.commit()
-                del batch
-                gc.collect()
+                os.remove(filepath)
                 
                 upload_progress[process_id].update({
-                    'current': processed_rows,
-                    'total': total_rows,
-                    'message': f'Processando... {processed_rows}/{total_rows}'
+                    'status': 'completed',
+                    'current': total_rows,
+                    'message': f'Concluído: {processed_rows} transações'
                 })
+                
+                return True
 
-            os.remove(filepath)
-            return True
+            finally:
+                conn.close()
 
         except Exception as e:
-            if conn:
+            if 'conn' in locals():
                 conn.close()
-            raise e
-        finally:
-            if conn:
-                conn.close()
+            raise
