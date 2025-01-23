@@ -46,59 +46,55 @@ class SantanderReader(BankReader):
                 'message': 'Iniciando...'
             }
             
-            # Count rows first
-            with pd.read_excel(filepath) as reader:
-                total_rows = len(reader)
-            
-            # Process in batches
+            # Read file
             df = pd.read_excel(filepath)
             data_start = self.find_data_start(df)
             
             if data_start is None:
                 raise ValueError("Header não encontrado")
             
+            # Process data
             df = df.iloc[data_start:]
             df.columns = ['Data', '', 'Histórico', 'Documento', 'Valor', 'Saldo']
             df = df.drop(['', 'Saldo'], axis=1)
             df = df[df['Data'].notna()]
 
-            total_batches = math.ceil(len(df) / self.batch_size)
+            total_rows = len(df)
+            total_batches = math.ceil(total_rows / self.batch_size)
             processed_rows = 0
+            
             conn = self.get_db_connection()
             cursor = conn.cursor()
 
             for batch_num in range(total_batches):
                 start_idx = batch_num * self.batch_size
-                end_idx = min((batch_num + 1) * self.batch_size, len(df))
+                end_idx = min((batch_num + 1) * self.batch_size, total_rows)
                 batch = df.iloc[start_idx:end_idx].copy()
 
                 for _, row in batch.iterrows():
-                    retry_count = 0
-                    while retry_count < self.max_retries:
-                        try:
-                            date = pd.to_datetime(row['Data'], format='%d/%m/%Y').date()
-                            value = float(str(row['Valor']).replace('R$', '').replace('.', '').replace(',', '.'))
-                            description = str(row['Histórico']).strip()
-                            document = str(row['Documento']).strip()
-                            
-                            cursor.execute('''
-                                INSERT INTO transactions 
-                                (date, description, value, type, transaction_type, document)
-                                VALUES (?, ?, ?, ?, ?, ?)
-                            ''', (
-                                date.strftime('%Y-%m-%d'),
-                                description,
-                                value,
-                                'receita' if value > 0 else 'despesa',
-                                self.determine_transaction_type(description, value),
-                                document if document != 'nan' else None
-                            ))
-                            processed_rows += 1
-                            break
-                        except Exception as e:
-                            retry_count += 1
-                            if retry_count == self.max_retries:
-                                print(f"Failed after {self.max_retries} retries: {str(e)}")
+                    try:
+                        date = pd.to_datetime(row['Data'], format='%d/%m/%Y').date()
+                        value = float(str(row['Valor']).replace('R$', '').replace('.', '').replace(',', '.'))
+                        description = str(row['Histórico']).strip()
+                        document = str(row['Documento']).strip()
+                        
+                        cursor.execute('''
+                            INSERT INTO transactions 
+                            (date, description, value, type, transaction_type, document)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        ''', (
+                            date.strftime('%Y-%m-%d'),
+                            description,
+                            value,
+                            'receita' if value > 0 else 'despesa',
+                            self.determine_transaction_type(description, value),
+                            document if document != 'nan' else None
+                        ))
+                        processed_rows += 1
+
+                    except Exception as e:
+                        print(f"Erro ao processar linha: {str(e)}")
+                        continue
 
                 conn.commit()
                 del batch
