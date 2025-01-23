@@ -7,7 +7,7 @@ class SantanderReader(BankReader):
     def __init__(self):
         super().__init__()
         self.name = "Santander"
-        self.batch_size = 10
+        self.batch_size = 5
         
     def get_bank_name(self):
         return self.name
@@ -35,8 +35,17 @@ class SantanderReader(BankReader):
         return 'OUTROS'
 
     def process_file(self, filepath, process_id, upload_progress):
+        conn = None
         try:
-            # Read first chunk to find header
+            # Initialize progress
+            upload_progress[process_id] = {
+                'status': 'processing',
+                'current': 0,
+                'total': 0,
+                'message': 'Iniciando...'
+            }
+
+            # Read header
             header_df = pd.read_excel(filepath, nrows=20)
             data_start = self.find_data_start(header_df)
             del header_df
@@ -50,81 +59,57 @@ class SantanderReader(BankReader):
             df.columns = ['Data', '', 'Histórico', 'Documento', 'Valor', 'Saldo']
             df = df.drop(['', 'Saldo'], axis=1)
             df = df[df['Data'].notna()]
-            df = df[~df['Histórico'].astype(str).str.contains('SALDO', case=False)]
 
             total_rows = len(df)
             processed_rows = 0
             conn = self.get_db_connection()
             cursor = conn.cursor()
 
-            try:
-                for start_idx in range(0, total_rows, self.batch_size):
-                    batch = df.iloc[start_idx:min(start_idx + self.batch_size, total_rows)]
-                    
-                    for _, row in batch.iterrows():
-                        try:
-                            # Validate date
-                            if pd.isna(row['Data']):
-                                continue
-                                
-                            date = pd.to_datetime(row['Data'], format='%d/%m/%Y').date()
-                            
-                            # Validate value
-                            value_str = str(row['Valor']).replace('R$', '').strip()
-                            if not value_str or pd.isna(value_str):
-                                continue
-                                
-                            value = float(value_str.replace('.', '').replace(',', '.'))
-                            
-                            # Get description and document
-                            description = str(row['Histórico']).strip()
-                            document = str(row['Documento']).strip()
-                            
-                            if not description:
-                                continue
-                                
-                            transaction_type = self.determine_transaction_type(description, value)
+            for start_idx in range(0, total_rows, self.batch_size):
+                end_idx = min(start_idx + self.batch_size, total_rows)
+                batch = df.iloc[start_idx:end_idx]
 
-                            cursor.execute('''
-                                INSERT INTO transactions 
-                                (date, description, value, type, transaction_type, document)
-                                VALUES (?, ?, ?, ?, ?, ?)
-                            ''', (
-                                date.strftime('%Y-%m-%d'),
-                                description,
-                                value,
-                                'receita' if value > 0 else 'despesa',
-                                transaction_type,
-                                document if document != 'nan' else None
-                            ))
-                            
-                            processed_rows += 1
+                for _, row in batch.iterrows():
+                    try:
+                        date = pd.to_datetime(row['Data'], format='%d/%m/%Y').date()
+                        value = float(str(row['Valor']).replace('R$', '').replace('.', '').replace(',', '.'))
+                        description = str(row['Histórico']).strip()
+                        document = str(row['Documento']).strip()
+                        
+                        transaction_type = self.determine_transaction_type(description, value)
 
-                        except Exception as e:
-                            print(f"Erro ao processar linha: {str(e)}")
-                            continue
+                        cursor.execute('''
+                            INSERT INTO transactions 
+                            (date, description, value, type, transaction_type, document)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        ''', (
+                            date.strftime('%Y-%m-%d'),
+                            description,
+                            value,
+                            'receita' if value > 0 else 'despesa',
+                            transaction_type,
+                            document if document != 'nan' else None
+                        ))
+                        processed_rows += 1
 
-                    conn.commit()
-                    gc.collect()
-                    
-                    upload_progress[process_id].update({
-                        'current': start_idx + len(batch),
-                        'total': total_rows,
-                        'message': f'Processando... {processed_rows}/{total_rows}'
-                    })
+                    except Exception as e:
+                        print(f"Erro ao processar linha: {str(e)}")
+                        continue
 
-            finally:
-                conn.close()
-                os.remove(filepath)
+                conn.commit()
+                gc.collect()
+                
+                upload_progress[process_id].update({
+                    'current': processed_rows,
+                    'total': total_rows,
+                    'message': f'Processando... {processed_rows}/{total_rows}'
+                })
 
-            upload_progress[process_id].update({
-                'status': 'completed',
-                'message': f'Concluído: {processed_rows} transações'
-            })
-
+            os.remove(filepath)
             return True
 
         except Exception as e:
-            if 'conn' in locals():
+            raise e
+        finally:
+            if conn:
                 conn.close()
-            raise

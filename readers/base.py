@@ -1,18 +1,17 @@
 from abc import ABC, abstractmethod
 import sqlite3
 import pandas as pd
-from datetime import datetime
 
 class BankReader(ABC):
     def __init__(self):
         self.name = "Base Reader"
-        self.batch_size = 10  # Reduced batch size
-        self.timeout = 15     # Reduced timeout
+        self.batch_size = 10
+        self.timeout = 60  # Increased timeout
 
     @abstractmethod
     def get_bank_name(self):
         pass
-
+    
     def get_db_connection(self):
         return sqlite3.connect('instance/financas.db', timeout=self.timeout)
 
