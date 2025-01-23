@@ -1,10 +1,12 @@
 import os
-from readers.base import BankReader  # Adjust the import path as necessary
+import pandas as pd
+from readers.base import BankReader
 
 class SantanderReader(BankReader):
     def __init__(self):
         super().__init__()
         self.name = "Santander"
+        self.batch_size = 20
 
     def get_bank_name(self):
         return self.name
@@ -96,3 +98,19 @@ class SantanderReader(BankReader):
             if 'conn' in locals():
                 conn.close()
             raise
+
+    def determine_transaction_type(self, description, value):
+        description = description.upper()
+        if 'PIX' in description:
+            return 'PIX RECEBIDO' if value > 0 else 'PIX ENVIADO'
+        elif 'TED' in description:
+            return 'TED RECEBIDA' if value > 0 else 'TED ENVIADA'
+        elif 'PAGAMENTO' in description:
+            return 'PAGAMENTO'
+        elif 'TARIFA' in description:
+            return 'TARIFA'
+        elif 'IOF' in description:
+            return 'IOF'
+        elif 'RESGATE' in description:
+            return 'RESGATE'
+        return 'OUTROS'
