@@ -4,9 +4,44 @@ from datetime import datetime
 import os
 
 class SantanderReader(BankReader):
+    def __init__(self):
+        super().__init__()
+        self.name = "Santander"
+        self.batch_size = 20
+        self.column_mapping = {
+            'data': ['Data', 'DATA'],
+            'descricao': ['Histórico', 'HISTORICO'],
+            'documento': ['Documento', 'DOCUMENTO'],
+            'valor': ['Valor', 'VALOR']
+        }
+
+    def get_bank_name(self):  # Added missing abstract method
+        return self.name
+
+    def find_data_start(self, df):
+        for idx, row in df.iterrows():
+            if any(str(val).strip() == 'Data' for val in row if pd.notna(val)):
+                return idx
+        return None
+
+    def determine_transaction_type(self, description, value):
+        description = description.upper()
+        if 'PIX' in description:
+            return 'PIX RECEBIDO' if value > 0 else 'PIX ENVIADO'
+        elif 'TED' in description:
+            return 'TED RECEBIDA' if value > 0 else 'TED ENVIADA'
+        elif 'PAGAMENTO' in description:
+            return 'PAGAMENTO'
+        elif 'TARIFA' in description:
+            return 'TARIFA'
+        elif 'IOF' in description:
+            return 'IOF'
+        elif 'RESGATE' in description:
+            return 'RESGATE'
+        return 'OUTROS'
+
     def process_file(self, filepath, process_id, upload_progress):
         try:
-            # Read header first
             header_df = pd.read_excel(filepath, nrows=20)
             data_start = self.find_data_start(header_df)
             del header_df
@@ -14,7 +49,6 @@ class SantanderReader(BankReader):
             if data_start is None:
                 raise ValueError("Header não encontrado")
 
-            # Read actual data
             df = pd.read_excel(filepath, skiprows=data_start)
             df.columns = ['Data', '', 'Histórico', 'Documento', 'Valor', 'Saldo']
             df = df.drop(['', 'Saldo'], axis=1)
@@ -39,12 +73,9 @@ class SantanderReader(BankReader):
 
                     for _, row in batch.iterrows():
                         try:
-                            date = self.parse_date(row['Data'])
-                            if not date:
-                                continue
-
-                            value = float(str(row['Valor']).replace('R$', '').strip().replace('.', '').replace(',', '.'))
+                            date = pd.to_datetime(row['Data'], dayfirst=True).date()
                             description = str(row['Histórico']).strip()
+                            value = float(str(row['Valor']).replace('R$', '').strip().replace('.', '').replace(',', '.'))
                             document = str(row['Documento']).strip()
                             
                             cursor.execute('''
