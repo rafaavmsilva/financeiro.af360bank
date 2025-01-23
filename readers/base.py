@@ -5,8 +5,10 @@ import pandas as pd
 class BankReader(ABC):
     def __init__(self):
         self.name = "Base Reader"
-        self.batch_size = 10
-        self.timeout = 60  # Increased timeout
+        self.batch_size = 5  # Reduced
+        self.chunk_size = 100  # For Excel reading
+        self.timeout = 120  # 2 minutes timeout
+        self.commit_interval = 5  # Commit every N rows
 
     @abstractmethod
     def get_bank_name(self):
