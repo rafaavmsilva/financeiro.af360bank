@@ -44,32 +44,29 @@ class SantanderReader(BankReader):
                 'message': 'Iniciando...'
             }
 
-            # Count total rows first
-            total_df = pd.read_excel(filepath)
-            total_rows = len(total_df)
-            del total_df
-            gc.collect()
+            # Read entire file
+            df = pd.read_excel(filepath)
+            data_start = self.find_data_start(df)
+            
+            if data_start is None:
+                raise ValueError("Header não encontrado")
+                
+            # Process data after header
+            df = df.iloc[data_start:]
+            df.columns = ['Data', '', 'Histórico', 'Documento', 'Valor', 'Saldo']
+            df = df.drop(['', 'Saldo'], axis=1)
+            df = df[df['Data'].notna()]
 
-            # Process in chunks
-            reader = pd.read_excel(filepath, chunksize=self.chunk_size)
+            total_rows = len(df)
             processed_rows = 0
-            data_start_found = False
             conn = self.get_db_connection()
             cursor = conn.cursor()
 
-            for chunk_idx, chunk in enumerate(reader):
-                if not data_start_found:
-                    data_start = self.find_data_start(chunk)
-                    if data_start is None:
-                        continue
-                    chunk = chunk.iloc[data_start:]
-                    data_start_found = True
+            for start_idx in range(0, total_rows, self.batch_size):
+                end_idx = min(start_idx + self.batch_size, total_rows)
+                batch = df.iloc[start_idx:end_idx]
 
-                chunk.columns = ['Data', '', 'Histórico', 'Documento', 'Valor', 'Saldo']
-                chunk = chunk.drop(['', 'Saldo'], axis=1)
-                chunk = chunk[chunk['Data'].notna()]
-
-                for idx, row in chunk.iterrows():
+                for _, row in batch.iterrows():
                     try:
                         date = pd.to_datetime(row['Data'], format='%d/%m/%Y').date()
                         value = float(str(row['Valor']).replace('R$', '').replace('.', '').replace(',', '.'))
@@ -92,21 +89,18 @@ class SantanderReader(BankReader):
                         ))
                         processed_rows += 1
 
-                        if processed_rows % self.commit_interval == 0:
-                            conn.commit()
-                            gc.collect()
-
                     except Exception as e:
-                        print(f"Erro ao processar linha {processed_rows}: {str(e)}")
+                        print(f"Erro ao processar linha: {str(e)}")
                         continue
 
+                conn.commit()
+                
                 upload_progress[process_id].update({
                     'current': processed_rows,
                     'total': total_rows,
                     'message': f'Processando... {processed_rows}/{total_rows}'
                 })
 
-            conn.commit()
             os.remove(filepath)
             return True
 
