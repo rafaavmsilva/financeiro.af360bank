@@ -3,6 +3,20 @@ import pandas as pd
 from readers.base import BankReader
 
 class SantanderReader(BankReader):
+    def __init__(self):
+        super().__init__()
+        self.name = "Santander"
+        self.batch_size = 10
+
+    def get_bank_name(self):
+        return self.name
+
+    def find_data_start(self, df):
+        for idx, row in df.iterrows():
+            if 'Data' in str(row.iloc[0]):
+                return idx
+        return None
+    
     def process_file(self, filepath, process_id, upload_progress):
         try:
             df = pd.read_excel(filepath, nrows=20)
