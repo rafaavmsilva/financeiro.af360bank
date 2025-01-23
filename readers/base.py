@@ -6,8 +6,8 @@ from datetime import datetime
 class BankReader(ABC):
     def __init__(self):
         self.name = "Base Reader"
-        self.batch_size = 20
-        self.timeout = 30
+        self.batch_size = 10  # Reduced batch size
+        self.timeout = 15     # Reduced timeout
 
     @abstractmethod
     def get_bank_name(self):
@@ -17,19 +17,24 @@ class BankReader(ABC):
         return sqlite3.connect('instance/financas.db', timeout=self.timeout)
 
     def validate_value(self, value_str):
+        """Validate and convert value string to float"""
         try:
+            if pd.isna(value_str):
+                return None
             clean_value = str(value_str).replace('R$', '').strip()
+            if not clean_value:
+                return None
             return float(clean_value.replace('.', '').replace(',', '.'))
-        except:
+        except Exception as e:
+            print(f"Error validating value '{value_str}': {str(e)}")
             return None
 
     def parse_date(self, value):
-        if pd.isna(value):
-            return None
+        """Parse date with validation"""
         try:
-            return pd.to_datetime(value, format='%d/%m/%Y').date()
-        except:
-            try:
-                return pd.to_datetime(value, dayfirst=True).date()
-            except:
+            if pd.isna(value):
                 return None
+            return pd.to_datetime(value, dayfirst=True).date()
+        except Exception as e:
+            print(f"Error parsing date '{value}': {str(e)}")
+            return None

@@ -3,31 +3,15 @@ import pandas as pd
 from readers.base import BankReader
 
 class SantanderReader(BankReader):
-    def __init__(self):
-        super().__init__()
-        self.name = "Santander"
-        self.batch_size = 20
-
-    def get_bank_name(self):
-        return self.name
-
-    def find_data_start(self, df):
-        for idx, row in df.iterrows():
-            if 'Data' in str(row.iloc[0]):
-                return idx
-        return None
-
     def process_file(self, filepath, process_id, upload_progress):
         try:
-            # Read header first
-            header_df = pd.read_excel(filepath, nrows=20)
-            data_start = self.find_data_start(header_df)
-            del header_df
+            df = pd.read_excel(filepath, nrows=20)
+            data_start = self.find_data_start(df)
+            del df
 
             if data_start is None:
                 raise ValueError("Header não encontrado")
 
-            # Read actual data
             df = pd.read_excel(filepath, skiprows=data_start)
             df.columns = ['Data', '', 'Histórico', 'Documento', 'Valor', 'Saldo']
             df = df.drop(['', 'Saldo'], axis=1)
@@ -45,17 +29,23 @@ class SantanderReader(BankReader):
 
                     for _, row in batch.iterrows():
                         try:
-                            # Validate required fields
                             date = self.parse_date(row['Data'])
                             value = self.validate_value(row['Valor'])
                             
-                            if not date or not value:
+                            if not date or value is None:
+                                print(f"Invalid date or value: date={row['Data']}, value={row['Valor']}")
                                 continue
-                                
-                            description = str(row['Histórico']).strip()
-                            document = str(row['Documento']).strip()
                             
+                            description = str(row['Histórico']).strip()
+                            if not description:
+                                continue
+
+                            document = str(row['Documento']).strip()
                             transaction_type = self.determine_transaction_type(description, value)
+                            
+                            if not transaction_type:
+                                print(f"Missing transaction type for: {description}")
+                                continue
 
                             cursor.execute('''
                                 INSERT INTO transactions 
