@@ -9,9 +9,5 @@ class BankReader(ABC):
     def process_file(self, filepath, process_id, upload_progress):
         pass
     
-    @abstractmethod
-    def get_bank_name(self):
-        pass
-    
     def get_db_connection(self):
         return sqlite3.connect('instance/financas.db')
