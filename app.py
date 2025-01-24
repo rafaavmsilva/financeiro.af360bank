@@ -26,6 +26,13 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=1)  # Set session lif
 upload_progress = {}  # Dictionary to track file upload progress
 cnpj_cache = {}  # Cache global para armazenar informações de CNPJs
 failed_cnpjs = set()  # Conjunto para armazenar CNPJs que falharam
+AF_COMPANIES = {
+    '50389827000107': 'AF ENERGY SOLAR 360',
+    '43077430000114': 'AF 360 CORRETORA DE SEGUROS LTDA',
+    '53720093000195': 'AF CREDITO BANK',
+    '55072511000100': 'AF COMERCIO DE CALCADOS LTDA',
+    '17814862000150': 'AF 360 FRANQUIAS LTDA'
+}
 
 # Initialize AuthClient
 auth_client = AuthClient(
@@ -552,8 +559,10 @@ def recebidos():
         SELECT date, description, value, type, document
         FROM transactions
         WHERE value > 0
-    '''
-    params = []
+        AND (document NOT IN ({af_companies}))
+    '''.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
+    
+    params = list(AF_COMPANIES.keys())
 
     # Add filters
     if tipo_filtro != 'todos':
@@ -677,8 +686,10 @@ def enviados():
         SELECT date, description, value, type, document
         FROM transactions
         WHERE value < 0
-    '''
-    params = []
+        AND (document NOT IN ({af_companies}))
+    '''.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
+    
+    params = list(AF_COMPANIES.keys())
 
     # Add filters
     if tipo_filtro != 'todos':
@@ -764,15 +775,6 @@ def transacoes_internas():
     if not session.get('authenticated'):
         return redirect('https://af360bank.onrender.com/login')
     
-    # Define AF companies
-    AF_COMPANIES = {
-        '50389827000107': 'AF ENERGY SOLAR 360',
-        '43077430000114': 'AF 360 CORRETORA DE SEGUROS LTDA',
-        '53720093000195': 'AF CREDITO BANK',
-        '55072511000100': 'AF COMERCIO DE CALCADOS LTDA',
-        '17814862000150': 'AF 360 FRANQUIAS LTDA'
-    }
-    
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -788,66 +790,62 @@ def transacoes_internas():
         'iof': 0.0,
         'pix_enviado': 0.0,
         'ted_enviada': 0.0,
-        'pagamento': 0.0
+        'pagamento': 0.0,
+        'diversos': 0.0
     }
 
-    # Base query to find transactions between AF companies
+    # Simpler query to find transactions involving AF companies
     query = '''
-        SELECT t1.date, t1.description, t1.value, t1.type, t1.document,
-               t2.document as receiver_document
-        FROM transactions t1
-        LEFT JOIN transactions t2 ON 
-            date(t1.date) = date(t2.date) 
-            AND abs(t1.value) = abs(t2.value)
-            AND t2.value > 0
-        WHERE t1.value < 0 
-        AND (t1.document IN ({af_companies}) OR t2.document IN ({af_companies}))
+        SELECT date, description, value, type, document
+        FROM transactions
+        WHERE document IN ({af_companies})
     '''.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
     
-    params = list(AF_COMPANIES.keys()) * 2  # Double the list for both conditions
+    params = list(AF_COMPANIES.keys())
 
     # Add filters
     if tipo_filtro != 'todos':
-        query += " AND t1.type = ?"
+        query += " AND type = ?"
         params.append(tipo_filtro)
 
-    if cnpj_filtro != 'todos' and cnpj_filtro in AF_COMPANIES:
-        query += " AND (t1.document = ? OR t2.document = ?)"
-        params.extend([cnpj_filtro, cnpj_filtro])
+    if cnpj_filtro != 'todos':
+        query += " AND document = ?"
+        params.append(cnpj_filtro)
 
     if start_date:
-        query += " AND t1.date >= ?"
+        query += " AND date >= ?"
         params.append(start_date)
 
     if end_date:
-        query += " AND t1.date <= ?"
+        query += " AND date <= ?"
         params.append(end_date)
 
-    query += " ORDER BY t1.date DESC"
+    query += " ORDER BY date DESC"
     cursor.execute(query, params)
 
     transactions = []
     for row in cursor.fetchall():
-        sender_doc = row[4]
-        receiver_doc = row[5]
-        
-        # Only include if both sender and receiver are AF companies
-        if sender_doc in AF_COMPANIES and receiver_doc in AF_COMPANIES:
-            transaction = {
-                'date': row[0],
-                'description': f"{row[3]} - De: {AF_COMPANIES[sender_doc]} Para: {AF_COMPANIES[receiver_doc]}",
-                'value': row[2],
-                'type': row[3],
-                'document': sender_doc,
-                'has_company_info': True
-            }
+        transaction = {
+            'date': row[0],
+            'description': row[1],
+            'value': row[2],
+            'type': row[3],
+            'document': row[4],
+            'has_company_info': True
+        }
 
-            # Update totals
-            transaction_type = transaction['type'].lower().replace(' ', '_')
-            if transaction_type in totals:
-                totals[transaction_type] += abs(transaction['value'])
+        # Format description with company names
+        company_name = AF_COMPANIES.get(transaction['document'], 'Unknown')
+        transaction['description'] = f"{transaction['type']} - {company_name}"
 
-            transactions.append(transaction)
+        # Update totals
+        transaction_type = transaction['type'].lower().replace(' ', '_')
+        if transaction_type in totals:
+            totals[transaction_type] += abs(transaction['value'])
+        else:
+            totals['diversos'] += abs(transaction['value'])
+
+        transactions.append(transaction)
 
     # Create CNPJs list only with AF companies
     cnpjs = [{'cnpj': cnpj, 'name': name} for cnpj, name in AF_COMPANIES.items()]
