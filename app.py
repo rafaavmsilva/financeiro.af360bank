@@ -651,9 +651,6 @@ def enviados():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Initialize lists
-    enviados = []
-
     # Get filters
     tipo_filtro = request.args.get('tipo', 'todos')
     cnpj_filtro = request.args.get('cnpj', 'todos')
@@ -668,7 +665,7 @@ def enviados():
         'ted_enviada': 0.0,
         'pagamento': 0.0,
         'cheque_devolvido': 0.0,
-        'diversos': 0.0  # Ensure "DIVERSOS" type is mapped
+        'diversos': 0.0
     }
 
     # Type mapping for totals
@@ -681,12 +678,15 @@ def enviados():
         'CHEQUE DEVOLVIDO': 'cheque_devolvido'
     }
 
-    # Base query
+    # Base query - Modified to exclude transactions between AF companies
     query = '''
         SELECT date, description, value, type, document
         FROM transactions
         WHERE value < 0
-        AND (document NOT IN ({af_companies}))
+        AND (
+            document NOT IN ({af_companies})
+            OR document IS NULL
+        )
     '''.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
     
     params = list(AF_COMPANIES.keys())
@@ -727,7 +727,7 @@ def enviados():
         }
 
         # Update totals
-        total_key = type_mapping.get(transaction['type'], 'diversos')  # Default to 'diversos' if type not found
+        total_key = type_mapping.get(transaction['type'], 'diversos')
         totals[total_key] += abs(transaction['value'])
 
         # Format description for known types
@@ -753,21 +753,22 @@ def enviados():
                     transaction['description'] = f"{transaction['type']} {company_name} ({cnpj_sem_zeros})"
                     transaction['has_company_info'] = True
 
-        enviados.append(transaction)
+        transactions.append(transaction)
 
     # Define cnpjs variable from cnpj_cache
-    cnpjs = [{'cnpj': cnpj, 'name': info.get('nome_fantasia') or info.get('razao_social', '')} for cnpj, info in cnpj_cache.items()]
+    cnpjs = [{'cnpj': cnpj, 'name': info.get('nome_fantasia') or info.get('razao_social', '')} 
+             for cnpj, info in cnpj_cache.items() if cnpj not in AF_COMPANIES]
 
     conn.close()
     return render_template('enviados.html',
-                           transactions=enviados,
-                           totals=totals,
-                           tipo_filtro=tipo_filtro,
-                           cnpj_filtro=cnpj_filtro,
-                           start_date=start_date,
-                           end_date=end_date,
-                           cnpjs=cnpjs,
-                           failed_cnpjs=len(failed_cnpjs))
+                         transactions=transactions,
+                         totals=totals,
+                         tipo_filtro=tipo_filtro,
+                         cnpj_filtro=cnpj_filtro,
+                         start_date=start_date,
+                         end_date=end_date,
+                         cnpjs=cnpjs,
+                         failed_cnpjs=len(failed_cnpjs))
 
 @app.route('/transacoes_internas')
 @login_required

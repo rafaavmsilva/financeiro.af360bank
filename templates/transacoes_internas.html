@@ -36,13 +36,25 @@
         <div class="col-md-12">
             <div class="btn-group" role="group" aria-label="Filtro de transações">
                 <a href="{{ url_for('transacoes_internas', tipo='todos', cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
-                   class="btn btn-outline-primary {% if tipo_filtro == 'todos' %}active{% endif %}">Todos</a>
-                {% for tipo in ['PIX ENVIADO', 'TED ENVIADA', 'PAGAMENTO', 'JUROS', 'IOF'] %}
-                <a href="{{ url_for('transacoes_internas', tipo=tipo, cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
-                   class="btn btn-outline-secondary {% if tipo_filtro == tipo %}active{% endif %}">
-                    {{ tipo|replace('_', ' ')|title }}
+                   class="btn btn-outline-primary {% if tipo_filtro == 'todos' %}active{% endif %}">
+                    Todos
                 </a>
-                {% endfor %}
+                <a href="{{ url_for('transacoes_internas', tipo='PIX RECEBIDO', cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
+                   class="btn btn-outline-success {% if tipo_filtro == 'PIX RECEBIDO' %}active{% endif %}">
+                    PIX
+                </a>
+                <a href="{{ url_for('transacoes_internas', tipo='TED RECEBIDA', cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
+                   class="btn btn-outline-info {% if tipo_filtro == 'TED RECEBIDA' %}active{% endif %}">
+                    TED
+                </a>
+                <a href="{{ url_for('transacoes_internas', tipo='PAGAMENTO', cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
+                   class="btn btn-outline-warning {% if tipo_filtro == 'PAGAMENTO' %}active{% endif %}">
+                    Pagamentos
+                </a>
+                <a href="{{ url_for('transacoes_internas', tipo='DIVERSOS', cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
+                   class="btn btn-outline-secondary {% if tipo_filtro == 'DIVERSOS' %}active{% endif %}">
+                    Diversos
+                </a>
             </div>
         </div>
     </div>
