@@ -764,6 +764,15 @@ def transacoes_internas():
     if not session.get('authenticated'):
         return redirect('https://af360bank.onrender.com/login')
     
+    # Define AF companies
+    AF_COMPANIES = {
+        '50389827000107': 'AF ENERGY SOLAR 360',
+        '43077430000114': 'AF 360 CORRETORA DE SEGUROS LTDA',
+        '53720093000195': 'AF CREDITO BANK',
+        '55072511000100': 'AF COMERCIO DE CALCADOS LTDA',
+        '17814862000150': 'AF 360 FRANQUIAS LTDA'
+    }
+    
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -783,38 +792,25 @@ def transacoes_internas():
         'pix_enviado': 0.0,
         'ted_enviada': 0.0,
         'pagamento': 0.0,
-        'cheque_devolvido': 0.0,
         'diversos': 0.0
     }
 
-    # Type mapping for totals
-    type_mapping = {
-        'JUROS': 'juros',
-        'IOF': 'iof',
-        'PIX ENVIADO': 'pix_enviado',
-        'TED ENVIADA': 'ted_enviada',
-        'PAGAMENTO': 'pagamento',
-        'CHEQUE DEVOLVIDO': 'cheque_devolvido'
-    }
-
-    # Base query
+    # Base query - modified to filter only AF companies transactions
     query = '''
         SELECT date, description, value, type, document
         FROM transactions
-        WHERE value < 0
-    '''
-    params = []
+        WHERE (document IN ({af_companies}))
+        AND value < 0
+    '''.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
+    
+    params = list(AF_COMPANIES.keys())
 
     # Add filters
     if tipo_filtro != 'todos':
-        if tipo_filtro == 'DIVERSOS':
-            query += " AND type NOT IN ({})".format(','.join(['?'] * len(type_mapping)))
-            params.extend(type_mapping.keys())
-        else:
-            query += " AND type = ?"
-            params.append(tipo_filtro)
+        query += " AND type = ?"
+        params.append(tipo_filtro)
 
-    if cnpj_filtro != 'todos':
+    if cnpj_filtro != 'todos' and cnpj_filtro in AF_COMPANIES:
         query += " AND document = ?"
         params.append(cnpj_filtro)
 
@@ -837,51 +833,36 @@ def transacoes_internas():
             'value': row[2],
             'type': row[3],
             'document': row[4],
-            'has_company_info': False
+            'has_company_info': True,
+            'company_name': AF_COMPANIES.get(row[4], 'Desconhecida')
         }
 
-        # Update totals
-        total_key = type_mapping.get(transaction['type'], 'diversos')
-        totals[total_key] += abs(transaction['value'])
-
-        # Format description for known types
-        if transaction['type'] in type_mapping:
-            if transaction['type'] == 'PAGAMENTO' and 'PAGAMENTO A' in transaction['description']:
-                transaction['description'] = f"PAGAMENTO A FORNECEDORES {transaction['description']}"
-            elif transaction['type'] == 'PIX ENVIADO':
-                transaction['description'] = f"PIX ENVIADO {transaction['description']}"
-            elif transaction['type'] == 'TED ENVIADA':
-                transaction['description'] = f"TED ENVIADA {transaction['description']}"
-            elif transaction['type'] == 'CHEQUE DEVOLVIDO':
-                transaction['description'] = f"CHEQUE DEVOLVIDO {transaction['description']}"
+        # Update totals based on transaction type
+        transaction_type = transaction['type'].lower().replace(' ', '_')
+        if transaction_type in totals:
+            totals[transaction_type] += abs(transaction['value'])
         else:
-            transaction['type'] = 'DIVERSOS'
+            totals['diversos'] += abs(transaction['value'])
 
-        # Get company info
-        if transaction['document']:
-            company_info = get_company_info(transaction['document'])
-            if company_info:
-                company_name = company_info.get('nome_fantasia') or company_info.get('razao_social', '')
-                if company_name:
-                    cnpj_sem_zeros = str(int(transaction['document']))
-                    transaction['description'] = f"{transaction['type']} {company_name} ({cnpj_sem_zeros})"
-                    transaction['has_company_info'] = True
+        # Format description with AF company name
+        if transaction['document'] in AF_COMPANIES:
+            transaction['description'] = f"{transaction['type']} - {AF_COMPANIES[transaction['document']]}"
 
-        transacoes.append(transaction)
+        transactions.append(transaction)
 
-    # Define cnpjs variable from cnpj_cache
-    cnpjs = [{'cnpj': cnpj, 'name': info.get('nome_fantasia') or info.get('razao_social', '')} for cnpj, info in cnpj_cache.items()]
+    # Create CNPJs list only with AF companies
+    cnpjs = [{'cnpj': cnpj, 'name': name} for cnpj, name in AF_COMPANIES.items()]
 
     conn.close()
     return render_template('transacoes_internas.html',
-                           transactions=transacoes,
-                           totals=totals,
-                           tipo_filtro=tipo_filtro,
-                           cnpj_filtro=cnpj_filtro,
-                           start_date=start_date,
-                           end_date=end_date,
-                           cnpjs=cnpjs,
-                           failed_cnpjs=len(failed_cnpjs))
+                         transactions=transactions,
+                         totals=totals,
+                         tipo_filtro=tipo_filtro,
+                         cnpj_filtro=cnpj_filtro,
+                         start_date=start_date,
+                         end_date=end_date,
+                         cnpjs=cnpjs,
+                         failed_cnpjs=0)
 
 @app.route('/dashboard')
 @login_required
