@@ -256,31 +256,34 @@ def process_file_with_progress(filepath, process_id):
     try:
         print(f"Iniciando processamento do arquivo: {filepath}")
         
-        # First read without header
+        # First read without header to find correct structure
         df_init = pd.read_excel(filepath, header=None)
         header_row = None
+        data_start = None
         
-        # Find header row after agency info
+        # Find header row and data start position
         for idx, row in df_init.iterrows():
-            # Skip agency/account info rows
-            if '0715' in str(row.iloc[0]):
+            row_values = [str(x).strip() for x in row if pd.notna(x)]
+            
+            # Skip empty rows
+            if not row_values:
                 continue
-            # Find actual header row
-            if 'Data' in str(row.iloc[0]):
-                header_row = idx
-                break
                 
+            # Check if this is the header row (contains 'Data' and 'Histórico')
+            if 'Data' in row_values and 'Histórico' in row_values:
+                header_row = idx
+                data_start = idx + 1
+                break
+        
         if header_row is None:
             raise Exception("Header 'Data' não encontrado")
-            
-        # Re-read with correct header
+        
+        # Re-read file with correct header and data
         df = pd.read_excel(filepath, skiprows=header_row)
         
-        print(f"Arquivo lido com sucesso. Total de linhas: {len(df)}")
-        print(f"Colunas encontradas: {df.columns.tolist()}")
+        # Clean up column names
+        df.columns = [str(col).strip() for col in df.columns]
         
-        # Lê o arquivo Excel
-        df = pd.read_excel(filepath)
         print(f"Arquivo lido com sucesso. Total de linhas: {len(df)}")
         print(f"Colunas encontradas: {df.columns.tolist()}")
         
@@ -288,13 +291,17 @@ def process_file_with_progress(filepath, process_id):
         upload_progress[process_id]['total'] = total_rows
         upload_progress[process_id]['message'] = 'Lendo arquivo...'
         
-        # Encontra as colunas corretas
-        data_col = find_matching_column(df, ['Data', 'DATE', 'DT', 'AGENCIA'])
-        desc_col = find_matching_column(df, ['Histórico', 'HISTORIC', 'DESCRIÇÃO', 'DESCRICAO', 'CONTA'])
-        valor_col = find_matching_column(df, ['Valor', 'VALUE', 'QUANTIA', 'Unnamed: 4'])
+        # Find required columns using more specific matching
+        data_col = find_matching_column(df, ['Data'])
+        desc_col = find_matching_column(df, ['Histórico'])
+        valor_col = find_matching_column(df, ['Valor (R$)', 'Valor'])
         
         if not all([data_col, desc_col, valor_col]):
             raise Exception(f"Colunas necessárias não encontradas. Colunas disponíveis: {df.columns.tolist()}")
+        
+        # Filter out rows where data column is empty or contains agency info
+        df = df[pd.notna(df[data_col])]
+        df = df[~df[data_col].astype(str).str.contains('0715')]
         
         # Conecta ao banco de dados
         conn = get_db_connection()
