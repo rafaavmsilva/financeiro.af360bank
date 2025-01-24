@@ -167,6 +167,10 @@ def get_company_info(cnpj):
         failed_cnpjs.add(cnpj)
     return None
 
+def is_af_company_transaction(description):
+    """Check if transaction description contains an AF company name"""
+    return any(company_name.upper() in description.upper() for company_name in AF_COMPANIES.values())
+
 @app.route('/')
 @login_required
 def index():
@@ -685,11 +689,18 @@ def enviados():
         WHERE value < 0
         AND (
             document NOT IN ({af_companies})
-            OR document IS NULL
+            AND NOT (
+                {conditions}
+            )
         )
-    '''.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
+    '''.format(
+        af_companies=','.join(['?' for _ in AF_COMPANIES]),
+        conditions=' OR '.join(['description LIKE ?' for _ in AF_COMPANIES.values()])
+    )
     
+    # Add parameters for both CNPJ and name checks
     params = list(AF_COMPANIES.keys())
+    params.extend(['%' + name + '%' for name in AF_COMPANIES.values()])
 
     # Add filters
     if tipo_filtro != 'todos':
@@ -795,14 +806,21 @@ def transacoes_internas():
         'diversos': 0.0
     }
 
-    # Simpler query to find transactions involving AF companies
     query = '''
         SELECT date, description, value, type, document
         FROM transactions
-        WHERE document IN ({af_companies})
-    '''.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
-    
+        WHERE (
+            document IN ({})
+            OR description LIKE {}
+        )
+    '''.format(
+        ','.join(['?' for _ in AF_COMPANIES]),
+        ' OR description LIKE '.join(['?' for _ in AF_COMPANIES.values()])
+    )
+
+    # Add parameters for both CNPJ and name checks
     params = list(AF_COMPANIES.keys())
+    params.extend(['%' + name + '%' for name in AF_COMPANIES.values()])
 
     # Add filters
     if tipo_filtro != 'todos':
@@ -810,21 +828,11 @@ def transacoes_internas():
         params.append(tipo_filtro)
 
     if cnpj_filtro != 'todos':
-        query += " AND document = ?"
-        params.append(cnpj_filtro)
+        query += " AND (document = ? OR description LIKE ?)"
+        params.extend([cnpj_filtro, '%' + AF_COMPANIES.get(cnpj_filtro, '') + '%'])
 
-    if start_date:
-        query += " AND date >= ?"
-        params.append(start_date)
+    # ...rest of the existing code...
 
-    if end_date:
-        query += " AND date <= ?"
-        params.append(end_date)
-
-    query += " ORDER BY date DESC"
-    cursor.execute(query, params)
-
-    transactions = []
     for row in cursor.fetchall():
         transaction = {
             'date': row[0],
@@ -835,9 +843,23 @@ def transacoes_internas():
             'has_company_info': True
         }
 
+        # Try to identify company from description if no document
+        if not transaction['document']:
+            for cnpj, name in AF_COMPANIES.items():
+                if name.upper() in transaction['description'].upper():
+                    transaction['document'] = cnpj
+                    break
+
         # Format description with company names
-        company_name = AF_COMPANIES.get(transaction['document'], 'Unknown')
-        transaction['description'] = f"{transaction['type']} - {company_name}"
+        company_name = AF_COMPANIES.get(transaction['document'], None)
+        if not company_name:
+            for name in AF_COMPANIES.values():
+                if name.upper() in transaction['description'].upper():
+                    company_name = name
+                    break
+        
+        if company_name:
+            transaction['description'] = f"{transaction['type']} - {company_name}"
 
         # Update totals
         transaction_type = transaction['type'].lower().replace(' ', '_')
