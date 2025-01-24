@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <h2>Transações Internas</h2>
+    
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="GET" class="row g-3">
+                <div class="col-md-3">
+                    <label for="tipo" class="form-label">Tipo</label>
+                    <select class="form-select" name="tipo" id="tipo">
+                        <option value="todos" {% if tipo_filtro == 'todos' %}selected{% endif %}>Todos</option>
+                        <option value="JUROS" {% if tipo_filtro == 'JUROS' %}selected{% endif %}>Juros</option>
+                        <option value="IOF" {% if tipo_filtro == 'IOF' %}selected{% endif %}>IOF</option>
+                        <option value="PIX ENVIADO" {% if tipo_filtro == 'PIX ENVIADO' %}selected{% endif %}>PIX Enviado</option>
+                        <option value="TED ENVIADA" {% if tipo_filtro == 'TED ENVIADA' %}selected{% endif %}>TED Enviada</option>
+                        <option value="PAGAMENTO" {% if tipo_filtro == 'PAGAMENTO' %}selected{% endif %}>Pagamento</option>
+                        <option value="DIVERSOS" {% if tipo_filtro == 'DIVERSOS' %}selected{% endif %}>Diversos</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="cnpj" class="form-label">CNPJ</label>
+                    <select class="form-select" name="cnpj" id="cnpj">
+                        <option value="todos" {% if cnpj_filtro == 'todos' %}selected{% endif %}>Todos</option>
+                        {% for cnpj in cnpjs %}
+                        <option value="{{ cnpj.cnpj }}" {% if cnpj_filtro == cnpj.cnpj %}selected{% endif %}>
+                            {{ cnpj.name }} ({{ cnpj.cnpj }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="start_date" class="form-label">Data Inicial</label>
+                    <input type="date" class="form-control" id="start_date" name="start_date" value="{{ start_date }}">
+                </div>
+                <div class="col-md-2">
+                    <label for="end_date" class="form-label">Data Final</label>
+                    <input type="date" class="form-control" id="end_date" name="end_date" value="{{ end_date }}">
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary">Filtrar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Totals -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Totais por Tipo</h5>
+                    <div class="row">
+                        {% for type, value in totals.items() %}
+                        <div class="col-md-2 mb-3">
+                            <div class="d-flex justify-content-between">
+                                <strong>{{ type|title }}:</strong>
+                                <span>R$ {{ "%.2f"|format(value)|replace(".", ",") }}</span>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Transactions Table -->
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Data</th>
+                    <th>Descrição</th>
+                    <th>Valor</th>
+                    <th>Tipo</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for transaction in transactions %}
+                <tr>
+                    <td>{{ transaction.date }}</td>
+                    <td>{{ transaction.description }}</td>
+                    <td class="text-danger">R$ {{ "%.2f"|format(transaction.value)|replace(".", ",") }}</td>
+                    <td>{{ transaction.type }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
