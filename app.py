@@ -687,11 +687,9 @@ def enviados():
         SELECT date, description, value, type, document
         FROM transactions
         WHERE value < 0
-        AND (
-            document NOT IN ({af_companies})
-            AND NOT (
-                {conditions}
-            )
+        AND NOT (
+            document IN ({af_companies})
+            OR {conditions}
         )
     '''.format(
         af_companies=','.join(['?' for _ in AF_COMPANIES]),
@@ -806,21 +804,39 @@ def transacoes_internas():
         'diversos': 0.0
     }
 
+    # Initialize transactions list
+    transactions = []
+
+    # Modified query for internal transactions
     query = '''
         SELECT date, description, value, type, document
         FROM transactions
         WHERE (
-            document IN ({})
-            OR description LIKE {}
+            document IN ({af_companies})
+            OR {conditions}
         )
     '''.format(
-        ','.join(['?' for _ in AF_COMPANIES]),
-        ' OR description LIKE '.join(['?' for _ in AF_COMPANIES.values()])
+        af_companies=','.join(['?' for _ in AF_COMPANIES]),
+        conditions=' OR '.join(['description LIKE ?' for _ in AF_COMPANIES.values()])
     )
-
-    # Add parameters for both CNPJ and name checks
+    
+    # Add parameters
     params = list(AF_COMPANIES.keys())
     params.extend(['%' + name + '%' for name in AF_COMPANIES.values()])
+
+    cursor.execute(query, params)
+
+    # Process results
+    for row in cursor.fetchall():
+        transaction = {
+            'date': row[0],
+            'description': row[1],
+            'value': row[2],
+            'type': row[3],
+            'document': row[4],
+            'has_company_info': True
+        }
+        transactions.append(transaction)
 
     # Add filters
     if tipo_filtro != 'todos':
