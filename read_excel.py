@@ -23,8 +23,12 @@ def retry_on_error(max_retries=MAX_RETRIES, delay=RETRY_DELAY):
     return decorator
 
 def find_matching_column(df, possible_names):
-    """Find a column name that matches any of the possible variations"""
+    """Find matching column with smarter detection"""
     for name in possible_names:
+        # Direct match
+        if name in df.columns:
+            return name
+        # Case insensitive match    
         matches = [col for col in df.columns if str(name).lower() in str(col).lower()]
         if matches:
             return matches[0]
@@ -124,13 +128,13 @@ def get_transaction_type(historico):
     return 'outros'
 
 def find_header_row(df):
-    """Encontra a linha que contém os cabeçalhos das colunas"""
-    header_keywords = ['data', 'histórico', 'valor', 'date', 'historic', 'value']
-    
+    """Find header row after agency info"""
     for idx, row in df.iterrows():
-        # Convert all values to string and check if any contain our keywords
-        row_values = [str(val).lower().strip() for val in row if not pd.isna(val)]
-        if any(keyword in value for value in row_values for keyword in header_keywords):
+        # Check if row contains agency info
+        if '0715' in str(row.iloc[0]):
+            continue
+        # Find actual header row    
+        if 'Data' in str(row.iloc[0]) and 'Histórico' in str(row.iloc[1]):
             return idx
     return 0
 

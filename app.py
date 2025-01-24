@@ -256,6 +256,29 @@ def process_file_with_progress(filepath, process_id):
     try:
         print(f"Iniciando processamento do arquivo: {filepath}")
         
+        # First read without header
+        df_init = pd.read_excel(filepath, header=None)
+        header_row = None
+        
+        # Find header row after agency info
+        for idx, row in df_init.iterrows():
+            # Skip agency/account info rows
+            if '0715' in str(row.iloc[0]):
+                continue
+            # Find actual header row
+            if 'Data' in str(row.iloc[0]):
+                header_row = idx
+                break
+                
+        if header_row is None:
+            raise Exception("Header 'Data' não encontrado")
+            
+        # Re-read with correct header
+        df = pd.read_excel(filepath, skiprows=header_row)
+        
+        print(f"Arquivo lido com sucesso. Total de linhas: {len(df)}")
+        print(f"Colunas encontradas: {df.columns.tolist()}")
+        
         # Lê o arquivo Excel
         df = pd.read_excel(filepath)
         print(f"Arquivo lido com sucesso. Total de linhas: {len(df)}")
