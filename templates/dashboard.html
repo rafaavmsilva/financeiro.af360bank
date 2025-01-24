@@ -85,7 +85,7 @@
             <div class="dashboard-card">
                 <div class="metric-label">Despesas Operacionais</div>
                 <div class="metric-value text-warning">
-                    R$ {{ "%.2f"|format(totals.juros + totals.iof)|replace('.', ',') }}
+                    R$ {{ "%.2f"|format(totals.juros + totals.iof + totals.tarifa + totals.multa)|replace('.', ',') }}
                 </div>
             </div>
         </div>
