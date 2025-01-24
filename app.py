@@ -776,79 +776,78 @@ def transacoes_internas():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Initialize lists
-    transacoes = []
-
     # Get filters
     tipo_filtro = request.args.get('tipo', 'todos')
     cnpj_filtro = request.args.get('cnpj', 'todos')
     start_date = request.args.get('start_date', '')
     end_date = request.args.get('end_date', '')
 
-    # Initialize totals dictionary
+    # Initialize totals
     totals = {
         'juros': 0.0,
         'iof': 0.0,
         'pix_enviado': 0.0,
         'ted_enviada': 0.0,
-        'pagamento': 0.0,
-        'diversos': 0.0
+        'pagamento': 0.0
     }
 
-    # Base query - modified to filter only AF companies transactions
+    # Base query to find transactions between AF companies
     query = '''
-        SELECT date, description, value, type, document
-        FROM transactions
-        WHERE (document IN ({af_companies}))
-        AND value < 0
+        SELECT t1.date, t1.description, t1.value, t1.type, t1.document,
+               t2.document as receiver_document
+        FROM transactions t1
+        LEFT JOIN transactions t2 ON 
+            date(t1.date) = date(t2.date) 
+            AND abs(t1.value) = abs(t2.value)
+            AND t2.value > 0
+        WHERE t1.value < 0 
+        AND (t1.document IN ({af_companies}) OR t2.document IN ({af_companies}))
     '''.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
     
-    params = list(AF_COMPANIES.keys())
+    params = list(AF_COMPANIES.keys()) * 2  # Double the list for both conditions
 
     # Add filters
     if tipo_filtro != 'todos':
-        query += " AND type = ?"
+        query += " AND t1.type = ?"
         params.append(tipo_filtro)
 
     if cnpj_filtro != 'todos' and cnpj_filtro in AF_COMPANIES:
-        query += " AND document = ?"
-        params.append(cnpj_filtro)
+        query += " AND (t1.document = ? OR t2.document = ?)"
+        params.extend([cnpj_filtro, cnpj_filtro])
 
     if start_date:
-        query += " AND date >= ?"
+        query += " AND t1.date >= ?"
         params.append(start_date)
 
     if end_date:
-        query += " AND date <= ?"
+        query += " AND t1.date <= ?"
         params.append(end_date)
 
-    query += " ORDER BY date DESC"
+    query += " ORDER BY t1.date DESC"
     cursor.execute(query, params)
 
     transactions = []
     for row in cursor.fetchall():
-        transaction = {
-            'date': row[0],
-            'description': row[1],
-            'value': row[2],
-            'type': row[3],
-            'document': row[4],
-            'has_company_info': True,
-            'company_name': AF_COMPANIES.get(row[4], 'Desconhecida')
-        }
+        sender_doc = row[4]
+        receiver_doc = row[5]
+        
+        # Only include if both sender and receiver are AF companies
+        if sender_doc in AF_COMPANIES and receiver_doc in AF_COMPANIES:
+            transaction = {
+                'date': row[0],
+                'description': f"{row[3]} - De: {AF_COMPANIES[sender_doc]} Para: {AF_COMPANIES[receiver_doc]}",
+                'value': row[2],
+                'type': row[3],
+                'document': sender_doc,
+                'has_company_info': True
+            }
 
-        # Update totals based on transaction type
-        transaction_type = transaction['type'].lower().replace(' ', '_')
-        if transaction_type in totals:
-            totals[transaction_type] += abs(transaction['value'])
-        else:
-            totals['diversos'] += abs(transaction['value'])
+            # Update totals
+            transaction_type = transaction['type'].lower().replace(' ', '_')
+            if transaction_type in totals:
+                totals[transaction_type] += abs(transaction['value'])
 
-        # Format description with AF company name
-        if transaction['document'] in AF_COMPANIES:
-            transaction['description'] = f"{transaction['type']} - {AF_COMPANIES[transaction['document']]}"
-
-        transactions.append(transaction)
+            transactions.append(transaction)
 
     # Create CNPJs list only with AF companies
     cnpjs = [{'cnpj': cnpj, 'name': name} for cnpj, name in AF_COMPANIES.items()]
