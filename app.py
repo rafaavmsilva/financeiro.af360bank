@@ -688,20 +688,13 @@ def enviados():
         SELECT date, description, value, type, document
         FROM transactions
         WHERE value < 0
-        AND NOT EXISTS (
-            SELECT 1
-            FROM transactions t2
-            WHERE t2.document IN ({af_companies})
-            OR {conditions}
-        )
+        AND document NOT IN ({af_companies})
     '''.format(
-        af_companies=','.join(['?' for _ in AF_COMPANIES]),
-        conditions=' OR '.join(['description LIKE ?' for _ in AF_COMPANIES.values()])
+        af_companies=','.join(['?' for _ in AF_COMPANIES])
     )
     
-    # Add parameters for both CNPJ and name checks
+    # Add parameters for CNPJ checks
     params = list(AF_COMPANIES.keys())
-    params.extend(['%' + name + '%' for name in AF_COMPANIES.values()])
 
     # Add filters
     if tipo_filtro != 'todos':
