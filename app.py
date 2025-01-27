@@ -677,22 +677,26 @@ def enviados():
     # Base query excluding AF companies
     query = '''
         WITH paired_transactions AS (
-            SELECT t1.id
+            SELECT DISTINCT t1.id 
             FROM transactions t1
-            JOIN transactions t2 ON 
+            LEFT JOIN transactions t2 ON 
                 ABS(t1.value) = ABS(t2.value) 
                 AND t1.date = t2.date
                 AND (
-                    (t1.description LIKE '%CHEQUE%' AND t2.description LIKE '%CHEQUE%')
+                    (t1.description LIKE '%CHEQUE%' AND t2.description LIKE '%DEVOL%')
                     OR (t1.description LIKE '%COMPENSACAO%' AND t2.description LIKE '%CHEQUE%')
                     OR (t1.description LIKE '%APLICACAO%' AND t2.description LIKE '%RESGATE%')
                 )
-                AND SIGN(t1.value) != SIGN(t2.value)
+                AND t1.value < 0
+                AND t2.value > 0
+            WHERE t2.id IS NOT NULL
         )
-        SELECT DISTINCT t.id, t.date, t.description, t.value, t.type, t.document
+        SELECT DISTINCT t.id, t.date, t.description, t.value, 
+               COALESCE(t.type, 'DIVERSOS') as type, 
+               t.document
         FROM transactions t
         WHERE t.value < 0 
-        AND t.document NOT IN ({af_companies})
+        AND (t.document NOT IN ({af_companies}) OR t.document IS NULL)
         AND t.description NOT LIKE '%CANCELAMENTO%'
         AND t.description NOT LIKE '%AF%'
         AND t.id NOT IN (SELECT id FROM paired_transactions)
@@ -736,11 +740,11 @@ def enviados():
     transactions = []
     for row in rows:
         transaction = {
-            'date': row[1],          # Fixed index
-            'description': row[2],    # Fixed index
-            'value': float(row[3]),   # Fixed index
-            'type': row[4] if row[4] else 'DIVERSOS',  # Fixed index
-            'document': row[5],       # Fixed index
+            'date': row[1],
+            'description': row[2],
+            'value': float(row[3]),
+            'type': row[4],
+            'document': row[5],
             'has_company_info': False
         }
 
