@@ -688,7 +688,11 @@ def enviados():
     # Base query excluding AF companies
     query = '''
         WITH matched_pairs AS (
-            SELECT t1.id as matched_id
+            SELECT 
+                CASE 
+                    WHEN t1.value < 0 THEN t1.id 
+                    WHEN t2.value < 0 THEN t2.id 
+                END as matched_id
             FROM transactions t1
             JOIN transactions t2 ON 
                 ABS(t1.value) = ABS(t2.value) 
@@ -703,11 +707,12 @@ def enviados():
         )
         SELECT DISTINCT t.id, date, description, value, type, document
         FROM transactions t
+        LEFT JOIN matched_pairs mp ON t.id = mp.matched_id
         WHERE value < 0 
         AND document NOT IN ({af_companies})
         AND description NOT LIKE '%CANCELAMENTO%'
         AND description NOT LIKE '%AF%'
-        AND t.id NOT IN (SELECT matched_id FROM matched_pairs)
+        AND (mp.matched_id IS NULL)
     '''.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
     
     params = list(AF_COMPANIES.keys())
