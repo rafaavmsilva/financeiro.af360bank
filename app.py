@@ -547,7 +547,7 @@ def recebidos():
 
     query = '''
         WITH matched_pairs AS (
-            -- Match CHEQUE pairs
+            -- Match CHEQUE/COMPENSACAO pairs
             SELECT t1.id
             FROM transactions t1
             JOIN transactions t2 ON 
@@ -600,6 +600,7 @@ def recebidos():
                 AND (
                     type NOT IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO')
                     OR type IS NULL
+                    OR type IN ('CHEQUE', 'COMPENSACAO', 'APLICACAO', 'RESGATE', 'ANTECIPACAO')
                 )
             """
         else:
@@ -706,7 +707,43 @@ def enviados():
     # Base query excluding AF companies
     query = '''
         WITH matched_pairs AS (
-            -- Same matched_pairs CTE as above
+            -- Match CHEQUE/COMPENSACAO pairs
+            SELECT t1.id
+            FROM transactions t1
+            JOIN transactions t2 ON 
+                ABS(t1.value) = ABS(t2.value) 
+                AND t1.date = t2.date
+                AND (
+                    (t1.description LIKE '%CHEQUE%' AND t2.description LIKE '%CHEQUE%')
+                    OR 
+                    (t1.description LIKE '%COMPENSACAO%' AND t2.description LIKE '%CHEQUE%')
+                )
+                AND SIGN(t1.value) != SIGN(t2.value)
+            
+            UNION
+            
+            -- Match APLICACAO/RESGATE pairs
+            SELECT t1.id
+            FROM transactions t1
+            JOIN transactions t2 ON 
+                ABS(t1.value) = ABS(t2.value)
+                AND t1.date = t2.date
+                AND (
+                    (t1.description LIKE '%APLICACAO%' AND t2.description LIKE '%RESGATE%')
+                    OR
+                    (t1.description LIKE '%CANCELAMENTO%' AND t2.description LIKE '%RESGATE%')
+                )
+            
+            UNION
+            
+            -- Match ANTECIPACAO pairs
+            SELECT t1.id
+            FROM transactions t1
+            JOIN transactions t2 ON 
+                ABS(t1.value) = ABS(t2.value)
+                AND t1.date = t2.date
+                AND t1.description LIKE '%ANTECIPACAO%'
+                AND SIGN(t1.value) != SIGN(t2.value)
         )
         SELECT DISTINCT t.id, date, description, value, type, document
         FROM transactions t
@@ -714,6 +751,10 @@ def enviados():
         AND t.id NOT IN (SELECT id FROM matched_pairs)
         AND document NOT IN ({af_companies})
         AND description NOT LIKE '%CANCELAMENTO%'
+        AND description NOT LIKE '%AF ENERGY%'
+        AND description NOT LIKE '%AF 360%'
+        AND description NOT LIKE '%AF CREDITO%'
+        AND description NOT LIKE '%AF COMERCIO%'
     '''.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
     
     params = list(AF_COMPANIES.keys())
