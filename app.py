@@ -688,23 +688,22 @@ def enviados():
     # Base query excluding AF companies
     query = '''
         WITH matched_pairs AS (
-            -- First identify CHEQUE pairs
+            -- Identify CHEQUE and COMPENSACAO pairs
             SELECT t1.id
             FROM transactions t1
             JOIN transactions t2 ON 
                 ABS(t1.value) = ABS(t2.value) 
                 AND t1.date = t2.date
                 AND (
-                    (t1.description LIKE '%CHEQUE%' AND t2.description LIKE '%CHEQUE%')
-                    OR (t1.description LIKE '%COMPENSACAO%' AND t2.description LIKE '%CHEQUE%')
+                    (t1.description LIKE '%CHEQUE%' AND t2.description LIKE '%DEVOLVIDO%')
+                    OR (t1.description LIKE '%COMPENSACAO%' AND t2.description LIKE '%DEVOLVIDO%')
                 )
                 AND t1.value < 0
                 AND t2.value > 0
-                AND t1.document = t2.document
 
             UNION
 
-            -- Then identify APLICACAO/RESGATE pairs
+            -- Identify APLICACAO and RESGATE pairs
             SELECT t1.id
             FROM transactions t1
             JOIN transactions t2 ON 
@@ -719,14 +718,16 @@ def enviados():
 
             UNION
 
-            -- Finally identify ANTECIPACAO pairs
+            -- Identify ANTECIPACAO pairs
             SELECT t1.id
             FROM transactions t1
             JOIN transactions t2 ON 
                 ABS(t1.value) = ABS(t2.value)
                 AND t1.date = t2.date
-                AND t1.description LIKE '%ANTECIPACAO%'
-                AND t2.description LIKE '%ANTECIPACAO%'
+                AND (
+                    t1.description LIKE '%ANTECIPACAO%'
+                    OR t2.description LIKE '%ANTECIPACAO%'
+                )
                 AND t1.value < 0
                 AND t2.value > 0
         )
@@ -736,7 +737,10 @@ def enviados():
         AND t.document NOT IN ({af_companies})
         AND t.description NOT LIKE '%CANCELAMENTO%'
         AND t.description NOT LIKE '%AF%'
-        AND t.id NOT IN (SELECT id FROM matched_pairs)
+        AND t.id NOT IN (
+            SELECT COALESCE(id, -1) 
+            FROM matched_pairs
+        )
     '''.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
     
     params = list(AF_COMPANIES.keys())
@@ -744,7 +748,12 @@ def enviados():
     # Add filters
     if tipo_filtro != 'todos':
         if tipo_filtro == 'DIVERSOS':
-            query += " AND (type IS NULL OR type = 'DIVERSOS')"
+            query += """ 
+                AND (
+                    type NOT IN ('PIX ENVIADO', 'TED ENVIADA', 'PAGAMENTO', 'CHEQUE', 'COMPENSACAO', 'APLICACAO')
+                    OR type IS NULL
+                )
+            """
         else:
             query += " AND type = ?"
             params.append(tipo_filtro)
