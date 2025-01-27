@@ -676,23 +676,26 @@ def enviados():
 
     # Base query excluding AF companies
     query = '''
-        WITH cheque_pairs AS (
+        WITH paired_transactions AS (
             SELECT t1.id
             FROM transactions t1
             JOIN transactions t2 ON 
                 ABS(t1.value) = ABS(t2.value) 
                 AND t1.date = t2.date
-                AND t1.description LIKE '%CHEQUE%'
-                AND t2.description LIKE '%CHEQUE%'
+                AND (
+                    (t1.description LIKE '%CHEQUE%' AND t2.description LIKE '%CHEQUE%')
+                    OR (t1.description LIKE '%COMPENSACAO%' AND t2.description LIKE '%CHEQUE%')
+                    OR (t1.description LIKE '%APLICACAO%' AND t2.description LIKE '%RESGATE%')
+                )
                 AND SIGN(t1.value) != SIGN(t2.value)
         )
-        SELECT DISTINCT t.id, date, description, value, type, document
+        SELECT DISTINCT t.id, t.date, t.description, t.value, t.type, t.document
         FROM transactions t
-        WHERE value < 0 
-        AND t.id NOT IN (SELECT id FROM cheque_pairs)
-        AND document NOT IN ({af_companies})
-        AND description NOT LIKE '%CANCELAMENTO%'
-        AND description NOT LIKE '%AF%'
+        WHERE t.value < 0 
+        AND t.document NOT IN ({af_companies})
+        AND t.description NOT LIKE '%CANCELAMENTO%'
+        AND t.description NOT LIKE '%AF%'
+        AND t.id NOT IN (SELECT id FROM paired_transactions)
     '''.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
     
     params = list(AF_COMPANIES.keys())
@@ -728,28 +731,27 @@ def enviados():
     print("Params:", params)
 
     cursor.execute(query, params)
-    rows = cursor.fetchall()  # Store rows here
-    print(f"Found {len(rows)} transactions")
+    rows = cursor.fetchall()
 
     transactions = []
-    for row in rows:  # Use stored rows instead of fetching again
+    for row in rows:
         transaction = {
-            'date': row[0],
-            'description': row[1],
-            'value': float(row[2]),
-            'type': row[3] if row[3] else 'DIVERSOS',
-            'document': row[4],
+            'date': row[1],          # Fixed index
+            'description': row[2],    # Fixed index
+            'value': float(row[3]),   # Fixed index
+            'type': row[4] if row[4] else 'DIVERSOS',  # Fixed index
+            'document': row[5],       # Fixed index
             'has_company_info': False
         }
 
-        # Update totals
+        # Update totals with the correct transaction type
         transaction_type = transaction['type'].lower().replace(' ', '_')
         if transaction_type in totals:
             totals[transaction_type] += abs(transaction['value'])
         else:
             totals['diversos'] += abs(transaction['value'])
 
-        # Format description
+        # Format description with company info
         if transaction['document']:
             company_info = get_company_info(transaction['document'])
             if company_info:
