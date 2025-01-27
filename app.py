@@ -547,27 +547,29 @@ def recebidos():
 
     query = '''
         WITH matched_pairs AS (
-            -- Match pairs with same value but opposite signs
-            SELECT 
-                CASE WHEN t1.value > 0 THEN t1.id ELSE t2.id END as positive_id,
-                CASE WHEN t1.value < 0 THEN t1.id ELSE t2.id END as negative_id
+            SELECT t1.id as matched_id
             FROM transactions t1
             JOIN transactions t2 ON 
                 ABS(t1.value) = ABS(t2.value) 
                 AND t1.date = t2.date
-                AND SIGN(t1.value) != SIGN(t2.value)
                 AND (
                     (t1.description LIKE '%CHEQUE%' AND t2.description LIKE '%CHEQUE%')
                     OR (t1.description LIKE '%COMPENSACAO%' AND t2.description LIKE '%CHEQUE%')
                     OR (t1.description LIKE '%APLICACAO%' AND t2.description LIKE '%RESGATE%')
                     OR (t1.description LIKE '%ANTECIPACAO%' AND t2.description LIKE '%ANTECIPACAO%')
                 )
+                AND SIGN(t1.value) != SIGN(t2.value)
         )
         SELECT DISTINCT t.id, date, description, value, type, document
         FROM transactions t
+        LEFT JOIN matched_pairs mp ON t.id = mp.matched_id
         WHERE value > 0 
         AND document NOT IN ({af_companies})
-        AND t.id NOT IN (SELECT COALESCE(positive_id, 0) FROM matched_pairs)
+        AND (
+            mp.matched_id IS NULL 
+            OR type IN ('ANTECIPACAO', 'RESGATE', 'CHEQUE', 'CREDITO')
+            OR description LIKE '%ANTECIPACAO GETNET%'
+        )
     '''.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
     
     params = list(AF_COMPANIES.keys())
@@ -686,16 +688,16 @@ def enviados():
     # Base query excluding AF companies
     query = '''
         WITH matched_pairs AS (
-            -- Match CHEQUE/COMPENSACAO pairs
-            SELECT t1.id, t2.id
+            SELECT t1.id as matched_id
             FROM transactions t1
             JOIN transactions t2 ON 
                 ABS(t1.value) = ABS(t2.value) 
                 AND t1.date = t2.date
                 AND (
                     (t1.description LIKE '%CHEQUE%' AND t2.description LIKE '%CHEQUE%')
-                    OR 
-                    (t1.description LIKE '%COMPENSACAO%' AND t2.description LIKE '%CHEQUE%')
+                    OR (t1.description LIKE '%COMPENSACAO%' AND t2.description LIKE '%CHEQUE%')
+                    OR (t1.description LIKE '%APLICACAO%' AND t2.description LIKE '%RESGATE%')
+                    OR (t1.description LIKE '%ANTECIPACAO%' AND t2.description LIKE '%ANTECIPACAO%')
                 )
                 AND SIGN(t1.value) != SIGN(t2.value)
         )
@@ -704,11 +706,8 @@ def enviados():
         WHERE value < 0 
         AND document NOT IN ({af_companies})
         AND description NOT LIKE '%CANCELAMENTO%'
-        AND description NOT LIKE '%AF ENERGY%'
-        AND description NOT LIKE '%AF 360%'
-        AND description NOT LIKE '%AF CREDITO%'
-        AND description NOT LIKE '%AF COMERCIO%'
-        AND t.id NOT IN (SELECT COALESCE(id, 0) FROM matched_pairs)
+        AND description NOT LIKE '%AF%'
+        AND t.id NOT IN (SELECT matched_id FROM matched_pairs)
     '''.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
     
     params = list(AF_COMPANIES.keys())
