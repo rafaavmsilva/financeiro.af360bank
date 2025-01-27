@@ -684,9 +684,12 @@ def enviados():
         SELECT date, description, value, type, document
         FROM transactions 
         WHERE value < 0 
-        AND (document NOT IN ({})
-        OR document IS NULL)
-    '''.format(','.join(['?' for _ in AF_COMPANIES]))
+        AND document NOT IN ({af_companies})
+        AND description NOT LIKE '%AF ENERGY%'
+        AND description NOT LIKE '%AF 360%'
+        AND description NOT LIKE '%AF CREDITO%'
+        AND description NOT LIKE '%AF COMERCIO%'
+    '''.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
     
     params = list(AF_COMPANIES.keys())
 
@@ -807,6 +810,11 @@ def transacoes_internas():
             t1.document IN ({af_companies})
             OR {conditions}
             OR t1.description LIKE '%AF%'
+        )
+        AND (
+            t1.type LIKE '%PIX%'
+            OR t1.type LIKE '%TED%'
+            OR t1.type = 'PAGAMENTO'
         )
     '''.format(
         af_companies=','.join(['?' for _ in AF_COMPANIES]),
