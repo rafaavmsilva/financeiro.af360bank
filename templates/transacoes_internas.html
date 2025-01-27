@@ -99,8 +99,8 @@
                 <tr>
                     <td>{{ transaction.date }}</td>
                     <td>
-                        <span class="badge {% if transaction.type == 'PIX ENVIADO' %}bg-success
-                                         {% elif transaction.type == 'TED ENVIADA' %}bg-info
+                        <span class="badge {% if transaction.type == 'PIX RECEBIDO' %}bg-success
+                                         {% elif transaction.type == 'TED RECEBIDA' %}bg-info
                                          {% elif transaction.type == 'PAGAMENTO' %}bg-warning
                                          {% elif transaction.type == 'JUROS' %}bg-danger
                                          {% elif transaction.type == 'IOF' %}bg-danger
