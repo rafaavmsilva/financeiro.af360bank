@@ -535,8 +535,6 @@ def recebidos():
     start_date = request.args.get('start_date', '')
     end_date = request.args.get('end_date', '')
 
-    print(f"Filters - tipo: {tipo_filtro}, cnpj: {cnpj_filtro}, start: {start_date}, end: {end_date}")
-
     totals = {
         'juros': 0.0,
         'iof': 0.0,
@@ -547,7 +545,6 @@ def recebidos():
         'diversos': 0.0
     }
 
-    # Modified CHEQUE pairs detection
     query = '''
         WITH cheque_pairs AS (
             SELECT t1.id
@@ -594,15 +591,11 @@ def recebidos():
 
     query += " ORDER BY date DESC"
     
-    print("Query:", query)
-    print("Params:", params)
-    
     cursor.execute(query, params)
     rows = cursor.fetchall()
-    print(f"Found {len(rows)} transactions")
 
     transactions = []
-    for row in cursor.fetchall():
+    for row in rows:
         transaction = {
             'date': row[1],
             'description': row[2],
@@ -619,7 +612,7 @@ def recebidos():
         else:
             totals['diversos'] += abs(transaction['value'])
 
-        # Format description with company info
+        # Format description
         if transaction['document']:
             company_info = get_company_info(transaction['document'])
             if company_info:
@@ -631,8 +624,12 @@ def recebidos():
 
         transactions.append(transaction)
 
-    print(f"Processed {len(transactions)} transactions")
-    print("Totals:", totals)
+    # Define cnpjs from cache excluding AF companies
+    cnpjs = [
+        {'cnpj': cnpj, 'name': info.get('nome_fantasia') or info.get('razao_social', '')} 
+        for cnpj, info in cnpj_cache.items() 
+        if cnpj not in AF_COMPANIES
+    ]
 
     conn.close()
     return render_template('recebidos.html',
