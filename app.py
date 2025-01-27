@@ -26,6 +26,7 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=1)  # Set session lif
 upload_progress = {}  # Dictionary to track file upload progress
 cnpj_cache = {}  # Cache global para armazenar informações de CNPJs
 failed_cnpjs = set()  # Conjunto para armazenar CNPJs que falharam
+
 AF_COMPANIES = {
     '50389827000107': 'AF ENERGY SOLAR 360',
     '43077430000114': 'AF 360 CORRETORA DE SEGUROS LTDA',
