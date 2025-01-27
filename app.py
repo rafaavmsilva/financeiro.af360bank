@@ -662,7 +662,7 @@ def enviados():
     start_date = request.args.get('start_date', '')
     end_date = request.args.get('end_date', '')
 
-    # Initialize totals dictionary with all possible types
+    # Initialize totals with all possible types
     totals = {
         'juros': 0.0,
         'iof': 0.0,
@@ -672,42 +672,28 @@ def enviados():
         'cheque': 0.0,
         'compensacao': 0.0,
         'aplicacao': 0.0,
+        'multa': 0.0,
         'diversos': 0.0
     }
 
-    # Updated type mapping to include all transaction types
-    type_mapping = {
-        'JUROS': 'juros',
-        'IOF': 'iof',
-        'PIX ENVIADO': 'pix_enviado',
-        'TED ENVIADA': 'ted_enviada',
-        'PAGAMENTO': 'pagamento',
-        'CHEQUE': 'cheque',
-        'COMPENSACAO': 'compensacao',
-        'APLICACAO': 'aplicacao'
-    }
+    # Debug: Print filter values
+    print(f"Filters - tipo: {tipo_filtro}, cnpj: {cnpj_filtro}, start: {start_date}, end: {end_date}")
 
-    # Modified base query to handle document and description conditions
+    # Base query excluding AF companies
     query = '''
         SELECT date, description, value, type, document
-        FROM transactions
-        WHERE value < 0
-        AND document NOT IN ({af_companies})
-        AND description NOT LIKE '%AF ENERGY%'
-        AND description NOT LIKE '%AF 360%'
-        AND description NOT LIKE '%AF CREDITO%'
-    '''.format(
-        af_companies=','.join(['?' for _ in AF_COMPANIES])
-    )
+        FROM transactions 
+        WHERE value < 0 
+        AND document NOT IN ({})
+        AND document NOT NULL
+    '''.format(','.join(['?' for _ in AF_COMPANIES]))
     
-    # Add parameters for CNPJ checks
     params = list(AF_COMPANIES.keys())
 
     # Add filters
     if tipo_filtro != 'todos':
         if tipo_filtro == 'DIVERSOS':
-            query += " AND type NOT IN ({})".format(','.join(['?'] * len(type_mapping)))
-            params.extend(type_mapping.keys())
+            query += " AND (type IS NULL OR type = 'DIVERSOS')"
         else:
             query += " AND type = ?"
             params.append(tipo_filtro)
@@ -725,53 +711,54 @@ def enviados():
         params.append(end_date)
 
     query += " ORDER BY date DESC"
+
+    # Debug: Print query and params
+    print("Query:", query)
+    print("Params:", params)
+
     cursor.execute(query, params)
+    rows = cursor.fetchall()
+    print(f"Found {len(rows)} transactions")
 
     transactions = []
     for row in cursor.fetchall():
         transaction = {
             'date': row[0],
             'description': row[1],
-            'value': row[2],
-            'type': row[3] or 'DIVERSOS',  # Default to DIVERSOS if type is None
+            'value': float(row[2]),
+            'type': row[3] if row[3] else 'DIVERSOS',
             'document': row[4],
             'has_company_info': False
         }
 
-        # Update totals using the correct mapping
-        total_key = type_mapping.get(transaction['type'], 'diversos')
-        totals[total_key] += abs(transaction['value'])
+        # Update totals
+        transaction_type = transaction['type'].lower().replace(' ', '_')
+        if transaction_type in totals:
+            totals[transaction_type] += abs(transaction['value'])
+        else:
+            totals['diversos'] += abs(transaction['value'])
 
-        # Format description for known types
-        if transaction['type'] in type_mapping:
-            if transaction['type'] == 'PAGAMENTO':
-                transaction['description'] = f"PAGAMENTO {transaction['description']}"
-            elif transaction['type'] == 'PIX ENVIADO':
-                transaction['description'] = f"PIX ENVIADO {transaction['description']}"
-            elif transaction['type'] == 'TED ENVIADA':
-                transaction['description'] = f"TED ENVIADA {transaction['description']}"
-            elif transaction['type'] == 'CHEQUE':
-                transaction['description'] = f"CHEQUE {transaction['description']}"
-            elif transaction['type'] == 'COMPENSACAO':
-                transaction['description'] = f"COMPENSAÇÃO {transaction['description']}"
-            elif transaction['type'] == 'APLICACAO':
-                transaction['description'] = f"APLICAÇÃO {transaction['description']}"
-
-        # Get company info
+        # Format description
         if transaction['document']:
             company_info = get_company_info(transaction['document'])
             if company_info:
                 company_name = company_info.get('nome_fantasia') or company_info.get('razao_social', '')
                 if company_name:
-                    cnpj_sem_zeros = str(int(transaction['document']))
-                    transaction['description'] = f"{transaction['type']} {company_name} ({cnpj_sem_zeros})"
+                    transaction['description'] = f"{transaction['type']} - {company_name}"
                     transaction['has_company_info'] = True
 
         transactions.append(transaction)
 
-    # Define cnpjs variable from cnpj_cache
-    cnpjs = [{'cnpj': cnpj, 'name': info.get('nome_fantasia') or info.get('razao_social', '')} 
-             for cnpj, info in cnpj_cache.items() if cnpj not in AF_COMPANIES]
+    # Debug: Print results
+    print(f"Processed {len(transactions)} transactions")
+    print("Totals:", totals)
+
+    # Define cnpjs from cache excluding AF companies
+    cnpjs = [
+        {'cnpj': cnpj, 'name': info.get('nome_fantasia') or info.get('razao_social', '')} 
+        for cnpj, info in cnpj_cache.items() 
+        if cnpj not in AF_COMPANIES
+    ]
 
     conn.close()
     return render_template('enviados.html',

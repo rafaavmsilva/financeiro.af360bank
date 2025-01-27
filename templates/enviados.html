@@ -12,6 +12,7 @@
     </div>
     {% endif %}
     
+    <!-- Summary Card -->
     <div class="row">
         <div class="col">
             <div class="card mb-4">
@@ -22,7 +23,7 @@
                         <div class="col-md-3 mb-2">
                             <p class="mb-0">
                                 {{ key|replace('_', ' ')|title }}: 
-                                R$ {{ "%.2f"|format(value|default(0)|float)|replace('.', ',') }}
+                                R$ {{ "%.2f"|format(value|abs|default(0)|float)|replace('.', ',') }}
                             </p>
                         </div>
                         {% endfor %}
@@ -32,14 +33,30 @@
         </div>
     </div>
 
+    <!-- Transaction Type Filters -->
     <div class="row mb-3">
         <div class="col-md-12">
-            <div class="btn-group" role="group" aria-label="Filtro de transações">
+            <div class="btn-group flex-wrap" role="group" aria-label="Filtro de transações">
                 <a href="{{ url_for('enviados', tipo='todos', cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
-                   class="btn btn-outline-primary {% if tipo_filtro == 'todos' %}active{% endif %}">Todos</a>
-                {% for tipo in ['PIX ENVIADO', 'TED ENVIADA', 'PAGAMENTO', 'JUROS', 'IOF', 'COMPRA', 'COMPENSACAO', 'APLICACAO', 'CHEQUE', 'MULTA', 'DIVERSOS'] %}
+                   class="btn btn-outline-primary {% if tipo_filtro == 'todos' %}active{% endif %}">
+                   Todos
+                </a>
+                {% set tipos = [
+                    ('PIX ENVIADO', 'success'),
+                    ('TED ENVIADA', 'info'),
+                    ('PAGAMENTO', 'warning'),
+                    ('JUROS', 'danger'),
+                    ('IOF', 'danger'),
+                    ('COMPRA', 'primary'),
+                    ('COMPENSACAO', 'secondary'),
+                    ('APLICACAO', 'info'),
+                    ('CHEQUE', 'dark'),
+                    ('MULTA', 'danger'),
+                    ('DIVERSOS', 'secondary')
+                ] %}
+                {% for tipo, color in tipos %}
                 <a href="{{ url_for('enviados', tipo=tipo, cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
-                   class="btn btn-outline-secondary {% if tipo_filtro == tipo %}active{% endif %}">
+                   class="btn btn-outline-{{ color }} {% if tipo_filtro == tipo %}active{% endif %}">
                     {{ tipo|replace('_', ' ')|title }}
                 </a>
                 {% endfor %}
@@ -47,7 +64,9 @@
         </div>
     </div>
 
+    <!-- Filters Row -->
     <div class="row mb-3">
+        <!-- CNPJ Filter -->
         <div class="col-md-6">
             <div class="form-group">
                 <select class="form-select" id="cnpjFilter" onchange="filterByCNPJ(this.value)">
@@ -60,18 +79,22 @@
                 </select>
             </div>
         </div>
+        <!-- Date Filters -->
         <div class="col-md-6">
             <div class="row">
                 <div class="col-6">
-                    <input type="date" class="form-control" id="startDate" value="{{ start_date }}" onchange="filterByDate()">
+                    <input type="date" class="form-control" id="startDate" value="{{ start_date }}" 
+                           onchange="filterByDate()" placeholder="Data Inicial">
                 </div>
                 <div class="col-6">
-                    <input type="date" class="form-control" id="endDate" value="{{ end_date }}" onchange="filterByDate()">
+                    <input type="date" class="form-control" id="endDate" value="{{ end_date }}" 
+                           onchange="filterByDate()" placeholder="Data Final">
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- Transactions Table -->
     <div class="table-responsive">
         <table class="table table-striped">
             <thead>
@@ -87,19 +110,26 @@
                 <tr>
                     <td>{{ transaction.date }}</td>
                     <td>
-                        <span class="badge {% if transaction.type == 'PIX ENVIADO' %}bg-success
-                                         {% elif transaction.type == 'TED ENVIADA' %}bg-info
-                                         {% elif transaction.type == 'PAGAMENTO' %}bg-warning
-                                         {% elif transaction.type == 'JUROS' %}bg-danger
-                                         {% elif transaction.type == 'IOF' %}bg-danger
-                                         {% elif transaction.type == 'COMPRA CARTAO' %}bg-primary
-                                         {% else %}bg-secondary{% endif %}">
+                        {% set badge_colors = {
+                            'PIX ENVIADO': 'success',
+                            'TED ENVIADA': 'info',
+                            'PAGAMENTO': 'warning',
+                            'JUROS': 'danger',
+                            'IOF': 'danger',
+                            'COMPRA': 'primary',
+                            'COMPENSACAO': 'secondary',
+                            'APLICACAO': 'info',
+                            'CHEQUE': 'dark',
+                            'MULTA': 'danger',
+                            'DIVERSOS': 'secondary'
+                        } %}
+                        <span class="badge bg-{{ badge_colors.get(transaction.type, 'secondary') }}">
                             {{ transaction.type }}
                         </span>
                     </td>
                     <td>{{ transaction.description }}</td>
-                    <td class="text-end {% if transaction.value > 0 %}text-success{% else %}text-danger{% endif %}">
-                        R$ {{ "%.2f"|format(transaction.value|float)|replace('.', ',') }}
+                    <td class="text-end text-danger">
+                        R$ {{ "%.2f"|format(transaction.value|abs|float)|replace('.', ',') }}
                     </td>
                 </tr>
                 {% endfor %}
