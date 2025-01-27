@@ -662,33 +662,40 @@ def enviados():
     start_date = request.args.get('start_date', '')
     end_date = request.args.get('end_date', '')
 
-    # Initialize totals dictionary
+    # Initialize totals dictionary with all possible types
     totals = {
         'juros': 0.0,
         'iof': 0.0,
         'pix_enviado': 0.0,
         'ted_enviada': 0.0,
         'pagamento': 0.0,
-        'cheque_devolvido': 0.0,
+        'cheque': 0.0,
+        'compensacao': 0.0,
+        'aplicacao': 0.0,
         'diversos': 0.0
     }
 
-    # Type mapping for totals
+    # Updated type mapping to include all transaction types
     type_mapping = {
         'JUROS': 'juros',
         'IOF': 'iof',
         'PIX ENVIADO': 'pix_enviado',
         'TED ENVIADA': 'ted_enviada',
         'PAGAMENTO': 'pagamento',
-        'CHEQUE DEVOLVIDO': 'cheque_devolvido'
+        'CHEQUE': 'cheque',
+        'COMPENSACAO': 'compensacao',
+        'APLICACAO': 'aplicacao'
     }
 
-    # Base query - Modified to exclude transactions between AF companies
+    # Modified base query to handle document and description conditions
     query = '''
         SELECT date, description, value, type, document
         FROM transactions
         WHERE value < 0
         AND document NOT IN ({af_companies})
+        AND description NOT LIKE '%AF ENERGY%'
+        AND description NOT LIKE '%AF 360%'
+        AND description NOT LIKE '%AF CREDITO%'
     '''.format(
         af_companies=','.join(['?' for _ in AF_COMPANIES])
     )
@@ -726,27 +733,29 @@ def enviados():
             'date': row[0],
             'description': row[1],
             'value': row[2],
-            'type': row[3],
+            'type': row[3] or 'DIVERSOS',  # Default to DIVERSOS if type is None
             'document': row[4],
             'has_company_info': False
         }
 
-        # Update totals
+        # Update totals using the correct mapping
         total_key = type_mapping.get(transaction['type'], 'diversos')
         totals[total_key] += abs(transaction['value'])
 
         # Format description for known types
         if transaction['type'] in type_mapping:
-            if transaction['type'] == 'PAGAMENTO' and 'PAGAMENTO A' in transaction['description']:
-                transaction['description'] = f"PAGAMENTO A FORNECEDORES {transaction['description']}"
+            if transaction['type'] == 'PAGAMENTO':
+                transaction['description'] = f"PAGAMENTO {transaction['description']}"
             elif transaction['type'] == 'PIX ENVIADO':
                 transaction['description'] = f"PIX ENVIADO {transaction['description']}"
             elif transaction['type'] == 'TED ENVIADA':
                 transaction['description'] = f"TED ENVIADA {transaction['description']}"
-            elif transaction['type'] == 'CHEQUE DEVOLVIDO':
-                transaction['description'] = f"CHEQUE DEVOLVIDO {transaction['description']}"
-        else:
-            transaction['type'] = 'DIVERSOS'
+            elif transaction['type'] == 'CHEQUE':
+                transaction['description'] = f"CHEQUE {transaction['description']}"
+            elif transaction['type'] == 'COMPENSACAO':
+                transaction['description'] = f"COMPENSAÇÃO {transaction['description']}"
+            elif transaction['type'] == 'APLICACAO':
+                transaction['description'] = f"APLICAÇÃO {transaction['description']}"
 
         # Get company info
         if transaction['document']:
