@@ -529,54 +529,37 @@ def recebidos():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Initialize lists
-    recebidos = []
-
     # Get filters
     tipo_filtro = request.args.get('tipo', 'todos')
     cnpj_filtro = request.args.get('cnpj', 'todos')
     start_date = request.args.get('start_date', '')
     end_date = request.args.get('end_date', '')
 
-    # Initialize totals dictionary
+    print(f"Filters - tipo: {tipo_filtro}, cnpj: {cnpj_filtro}, start: {start_date}, end: {end_date}")
+
     totals = {
         'juros': 0.0,
         'iof': 0.0,
         'pix_recebido': 0.0,
         'ted_recebida': 0.0,
         'pagamento': 0.0,
-        'cheque_devolvido': 0.0,
-        'diversos': 0.0  # Ensure "DIVERSOS" type is mapped
+        'cheque': 0.0,
+        'diversos': 0.0
     }
 
-    # Type mapping for totals
-    type_mapping = {
-        'PIX RECEBIDO': 'pix_recebido',
-        'TED RECEBIDA': 'ted_recebida',
-        'PAGAMENTO': 'pagamento',
-        'TARIFA': 'tarifa',
-        'IOF': 'iof',
-        'RESGATE': 'resgate',
-        'APLICACAO': 'aplicacao',
-        'COMPRA': 'compra',
-        'COMPENSACAO': 'compensacao',
-        'CHEQUE': 'cheque',
-        'TRANSFERENCIA': 'transferencia',
-        'JUROS': 'juros',
-        'MULTA': 'multa',
-        'DIVERSOS': 'diversos'
-    }
-    # Base query
+    # Modified CHEQUE pairs detection
     query = '''
         WITH cheque_pairs AS (
-            SELECT t1.id, t2.id as paired_id
+            SELECT t1.id
             FROM transactions t1
-            JOIN transactions t2 ON t1.value = -t2.value 
+            JOIN transactions t2 ON 
+                ABS(t1.value) = ABS(t2.value) 
                 AND t1.date = t2.date
                 AND t1.description LIKE '%CHEQUE%'
                 AND t2.description LIKE '%CHEQUE%'
+                AND SIGN(t1.value) != SIGN(t2.value)
         )
-        SELECT date, description, value, type, document
+        SELECT DISTINCT t.id, date, description, value, type, document
         FROM transactions t
         WHERE value > 0 
         AND t.id NOT IN (SELECT id FROM cheque_pairs)
@@ -585,16 +568,13 @@ def recebidos():
     
     params = list(AF_COMPANIES.keys())
 
-    # Add filters
     if tipo_filtro != 'todos':
         if tipo_filtro == 'DIVERSOS':
             query += """ 
-                AND type NOT IN (
-                    'PIX RECEBIDO', 
-                    'TED RECEBIDA', 
-                    'PAGAMENTO'
+                AND (
+                    type NOT IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO')
+                    OR type IS NULL
                 )
-                AND (type IS NULL OR type = 'DIVERSOS')
             """
         else:
             query += " AND type = ?"
@@ -613,39 +593,33 @@ def recebidos():
         params.append(end_date)
 
     query += " ORDER BY date DESC"
+    
+    print("Query:", query)
+    print("Params:", params)
+    
     cursor.execute(query, params)
+    rows = cursor.fetchall()
+    print(f"Found {len(rows)} transactions")
 
     transactions = []
     for row in cursor.fetchall():
         transaction = {
-            'date': row[0],
-            'description': row[1],
-            'value': float(row[2]),
-            'type': row[3] if row[3] else 'DIVERSOS',
-            'document': row[4],
+            'date': row[1],
+            'description': row[2],
+            'value': float(row[3]),
+            'type': row[4] if row[4] else 'DIVERSOS',
+            'document': row[5],
             'has_company_info': False
         }
 
         # Update totals
-        if transaction['type'] in type_mapping:
-            totals[type_mapping[transaction['type']]] += transaction['value']
+        transaction_type = transaction['type'].lower().replace(' ', '_')
+        if transaction_type in totals:
+            totals[transaction_type] += abs(transaction['value'])
         else:
-            totals['diversos'] += transaction['value']
+            totals['diversos'] += abs(transaction['value'])
 
-        # Format description for known types
-        if transaction['type'] in type_mapping:
-            if transaction['type'] == 'PAGAMENTO' and 'PAGAMENTO A' in transaction['description']:
-                transaction['description'] = f"PAGAMENTO A FORNECEDORES {transaction['description']}"
-            elif transaction['type'] == 'PIX RECEBIDO':
-                transaction['description'] = f"PIX RECEBIDO {transaction['description']}"
-            elif transaction['type'] == 'TED RECEBIDA':
-                transaction['description'] = f"TED RECEBIDA {transaction['description']}"
-            elif transaction['type'] == 'CHEQUE DEVOLVIDO':
-                transaction['description'] = f"CHEQUE DEVOLVIDO {transaction['description']}"
-        else:
-            transaction['type'] = 'DIVERSOS'
-
-        # Get company info
+        # Format description with company info
         if transaction['document']:
             company_info = get_company_info(transaction['document'])
             if company_info:
@@ -655,10 +629,10 @@ def recebidos():
                     transaction['description'] = f"{transaction['type']} {company_name} ({cnpj_sem_zeros})"
                     transaction['has_company_info'] = True
 
-        recebidos.append(transaction)
+        transactions.append(transaction)
 
-    # Define cnpjs variable from cnpj_cache
-    cnpjs = [{'cnpj': cnpj, 'name': info.get('nome_fantasia') or info.get('razao_social', '')} for cnpj, info in cnpj_cache.items()]
+    print(f"Processed {len(transactions)} transactions")
+    print("Totals:", totals)
 
     conn.close()
     return render_template('recebidos.html',
