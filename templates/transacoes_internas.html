@@ -12,6 +12,7 @@
     </div>
     {% endif %}
     
+    <!-- Summary Card -->
     <div class="row">
         <div class="col">
             <div class="card mb-4">
@@ -32,33 +33,32 @@
         </div>
     </div>
 
+    <!-- Transaction Type Filters -->
     <div class="row mb-3">
         <div class="col-md-12">
-            <div class="btn-group" role="group" aria-label="Filtro de transações">
+            <div class="btn-group flex-wrap" role="group" aria-label="Filtro de transações">
                 <a href="{{ url_for('transacoes_internas', tipo='todos', cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
                    class="btn btn-outline-primary {% if tipo_filtro == 'todos' %}active{% endif %}">
                     Todos
                 </a>
-                <a href="{{ url_for('transacoes_internas', tipo='PIX RECEBIDO', cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
-                   class="btn btn-outline-success {% if tipo_filtro == 'PIX RECEBIDO' %}active{% endif %}">
-                    PIX
+                {% set tipos = [
+                    ('PIX RECEBIDO', 'success', 'PIX Recebido'),
+                    ('PIX ENVIADO', 'success', 'PIX Enviado'),
+                    ('TED RECEBIDA', 'info', 'TED Recebida'),
+                    ('TED ENVIADA', 'info', 'TED Enviada'),
+                    ('PAGAMENTO', 'warning', 'Pagamentos')
+                ] %}
+                {% for tipo, color, label in tipos %}
+                <a href="{{ url_for('transacoes_internas', tipo=tipo, cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
+                   class="btn btn-outline-{{ color }} {% if tipo_filtro == tipo %}active{% endif %}">
+                    {{ label }}
                 </a>
-                <a href="{{ url_for('transacoes_internas', tipo='TED RECEBIDA', cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
-                   class="btn btn-outline-info {% if tipo_filtro == 'TED RECEBIDA' %}active{% endif %}">
-                    TED
-                </a>
-                <a href="{{ url_for('transacoes_internas', tipo='PAGAMENTO', cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
-                   class="btn btn-outline-warning {% if tipo_filtro == 'PAGAMENTO' %}active{% endif %}">
-                    Pagamentos
-                </a>
-                <a href="{{ url_for('transacoes_internas', tipo='DIVERSOS', cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
-                   class="btn btn-outline-secondary {% if tipo_filtro == 'DIVERSOS' %}active{% endif %}">
-                    Diversos
-                </a>
+                {% endfor %}
             </div>
         </div>
     </div>
 
+    <!-- Rest of the template remains the same -->
     <div class="row mb-3">
         <div class="col-md-6">
             <div class="form-group">
@@ -99,13 +99,18 @@
                 <tr>
                     <td>{{ transaction.date }}</td>
                     <td>
-                        <span class="badge {% if transaction.type == 'PIX RECEBIDO' %}bg-success
-                                         {% elif transaction.type == 'TED RECEBIDA' %}bg-info
-                                         {% elif transaction.type == 'PAGAMENTO' %}bg-warning
-                                         {% elif transaction.type == 'JUROS' %}bg-danger
-                                         {% elif transaction.type == 'IOF' %}bg-danger
-                                         {% elif transaction.type == 'COMPRA CARTAO' %}bg-primary
-                                         {% else %}bg-secondary{% endif %}">
+                        {% set badge_colors = {
+                            'PIX RECEBIDO': 'success',
+                            'PIX ENVIADO': 'success',
+                            'TED RECEBIDA': 'info',
+                            'TED ENVIADA': 'info',
+                            'PAGAMENTO': 'warning',
+                            'JUROS': 'danger',
+                            'IOF': 'danger',
+                            'COMPRA CARTAO': 'primary',
+                            'DIVERSOS': 'secondary'
+                        } %}
+                        <span class="badge bg-{{ badge_colors.get(transaction.type, 'secondary') }}">
                             {{ transaction.type }}
                         </span>
                     </td>

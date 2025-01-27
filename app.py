@@ -684,11 +684,15 @@ def enviados():
         SELECT date, description, value, type, document
         FROM transactions 
         WHERE value < 0 
-        AND document NOT IN ({af_companies})
+        AND (
+            document NOT IN ({af_companies})
+            OR document IS NULL
+        )
         AND description NOT LIKE '%AF ENERGY%'
         AND description NOT LIKE '%AF 360%'
         AND description NOT LIKE '%AF CREDITO%'
         AND description NOT LIKE '%AF COMERCIO%'
+        AND description NOT LIKE '%AF FRANQUIAS%'
     '''.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
     
     params = list(AF_COMPANIES.keys())
