@@ -688,11 +688,8 @@ def enviados():
     # Base query excluding AF companies
     query = '''
         WITH matched_pairs AS (
-            SELECT 
-                CASE 
-                    WHEN t1.value < 0 THEN t1.id 
-                    WHEN t2.value < 0 THEN t2.id 
-                END as matched_id
+            -- First identify CHEQUE pairs
+            SELECT t1.id
             FROM transactions t1
             JOIN transactions t2 ON 
                 ABS(t1.value) = ABS(t2.value) 
@@ -700,19 +697,46 @@ def enviados():
                 AND (
                     (t1.description LIKE '%CHEQUE%' AND t2.description LIKE '%CHEQUE%')
                     OR (t1.description LIKE '%COMPENSACAO%' AND t2.description LIKE '%CHEQUE%')
-                    OR (t1.description LIKE '%APLICACAO%' AND t2.description LIKE '%RESGATE%')
-                    OR (t1.description LIKE '%ANTECIPACAO%' AND t2.description LIKE '%ANTECIPACAO%')
                 )
-                AND SIGN(t1.value) != SIGN(t2.value)
+                AND t1.value < 0
+                AND t2.value > 0
+                AND t1.document = t2.document
+
+            UNION
+
+            -- Then identify APLICACAO/RESGATE pairs
+            SELECT t1.id
+            FROM transactions t1
+            JOIN transactions t2 ON 
+                ABS(t1.value) = ABS(t2.value)
+                AND t1.date = t2.date
+                AND (
+                    (t1.description LIKE '%APLICACAO%' AND t2.description LIKE '%RESGATE%')
+                    OR (t1.description LIKE '%CONTAMAX%' AND t2.description LIKE '%CONTAMAX%')
+                )
+                AND t1.value < 0
+                AND t2.value > 0
+
+            UNION
+
+            -- Finally identify ANTECIPACAO pairs
+            SELECT t1.id
+            FROM transactions t1
+            JOIN transactions t2 ON 
+                ABS(t1.value) = ABS(t2.value)
+                AND t1.date = t2.date
+                AND t1.description LIKE '%ANTECIPACAO%'
+                AND t2.description LIKE '%ANTECIPACAO%'
+                AND t1.value < 0
+                AND t2.value > 0
         )
-        SELECT DISTINCT t.id, date, description, value, type, document
+        SELECT DISTINCT t.id, t.date, t.description, t.value, t.type, t.document
         FROM transactions t
-        LEFT JOIN matched_pairs mp ON t.id = mp.matched_id
-        WHERE value < 0 
-        AND document NOT IN ({af_companies})
-        AND description NOT LIKE '%CANCELAMENTO%'
-        AND description NOT LIKE '%AF%'
-        AND (mp.matched_id IS NULL)
+        WHERE t.value < 0 
+        AND t.document NOT IN ({af_companies})
+        AND t.description NOT LIKE '%CANCELAMENTO%'
+        AND t.description NOT LIKE '%AF%'
+        AND t.id NOT IN (SELECT id FROM matched_pairs)
     '''.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
     
     params = list(AF_COMPANIES.keys())
