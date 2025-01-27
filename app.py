@@ -684,8 +684,8 @@ def enviados():
         SELECT date, description, value, type, document
         FROM transactions 
         WHERE value < 0 
-        AND document NOT IN ({})
-        AND document NOT NULL
+        AND (document NOT IN ({})
+        OR document IS NULL)
     '''.format(','.join(['?' for _ in AF_COMPANIES]))
     
     params = list(AF_COMPANIES.keys())
@@ -717,11 +717,11 @@ def enviados():
     print("Params:", params)
 
     cursor.execute(query, params)
-    rows = cursor.fetchall()
+    rows = cursor.fetchall()  # Store rows here
     print(f"Found {len(rows)} transactions")
 
     transactions = []
-    for row in cursor.fetchall():
+    for row in rows:  # Use stored rows instead of fetching again
         transaction = {
             'date': row[0],
             'description': row[1],
@@ -803,10 +803,10 @@ def transacoes_internas():
     query = '''
         SELECT DISTINCT t1.date, t1.description, t1.value, t1.type, t1.document
         FROM transactions t1
-        WHERE t1.value < 0
-        AND (
+        WHERE (
             t1.document IN ({af_companies})
             OR {conditions}
+            OR t1.description LIKE '%AF%'
         )
     '''.format(
         af_companies=','.join(['?' for _ in AF_COMPANIES]),
@@ -841,20 +841,21 @@ def transacoes_internas():
     
     # Execute query
     cursor.execute(query, params)
+    rows = cursor.fetchall()  # Store rows here
     
     # Process results
     transactions = []
-    for row in cursor.fetchall():
+    for row in rows:  # Use stored rows
         transaction = {
             'date': row[0],
             'description': row[1],
-            'value': row[2],
-            'type': row[3],
+            'value': float(row[2]),
+            'type': row[3] if row[3] else 'DIVERSOS',
             'document': row[4],
             'has_company_info': True
         }
 
-        # Format description with company names
+        # Improved company name detection
         company_name = None
         if transaction['document'] in AF_COMPANIES:
             company_name = AF_COMPANIES[transaction['document']]
@@ -866,13 +867,6 @@ def transacoes_internas():
 
         if company_name:
             transaction['description'] = f"{transaction['type']} - {company_name}"
-
-        # Update totals
-        transaction_type = transaction['type'].lower().replace(' ', '_')
-        if transaction_type in totals:
-            totals[transaction_type] += abs(transaction['value'])
-        else:
-            totals['diversos'] += abs(transaction['value'])
 
         transactions.append(transaction)
 
