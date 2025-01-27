@@ -551,20 +551,36 @@ def recebidos():
 
     # Type mapping for totals
     type_mapping = {
-        'JUROS': 'juros',
-        'IOF': 'iof',
         'PIX RECEBIDO': 'pix_recebido',
         'TED RECEBIDA': 'ted_recebida',
         'PAGAMENTO': 'pagamento',
-        'CHEQUE DEVOLVIDO': 'cheque_devolvido'
+        'TARIFA': 'tarifa',
+        'IOF': 'iof',
+        'RESGATE': 'resgate',
+        'APLICACAO': 'aplicacao',
+        'COMPRA': 'compra',
+        'COMPENSACAO': 'compensacao',
+        'CHEQUE': 'cheque',
+        'TRANSFERENCIA': 'transferencia',
+        'JUROS': 'juros',
+        'MULTA': 'multa',
+        'DIVERSOS': 'diversos'
     }
-
     # Base query
     query = '''
+        WITH cheque_pairs AS (
+            SELECT t1.id, t2.id as paired_id
+            FROM transactions t1
+            JOIN transactions t2 ON t1.value = -t2.value 
+                AND t1.date = t2.date
+                AND t1.description LIKE '%CHEQUE%'
+                AND t2.description LIKE '%CHEQUE%'
+        )
         SELECT date, description, value, type, document
-        FROM transactions
-        WHERE value > 0
-        AND (document NOT IN ({af_companies}))
+        FROM transactions t
+        WHERE value > 0 
+        AND t.id NOT IN (SELECT id FROM cheque_pairs)
+        AND document NOT IN ({af_companies})
     '''.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
     
     params = list(AF_COMPANIES.keys())
@@ -572,8 +588,14 @@ def recebidos():
     # Add filters
     if tipo_filtro != 'todos':
         if tipo_filtro == 'DIVERSOS':
-            query += " AND type NOT IN ({})".format(','.join(['?'] * len(type_mapping)))
-            params.extend(type_mapping.keys())
+            query += """ 
+                AND type NOT IN (
+                    'PIX RECEBIDO', 
+                    'TED RECEBIDA', 
+                    'PAGAMENTO'
+                )
+                AND (type IS NULL OR type = 'DIVERSOS')
+            """
         else:
             query += " AND type = ?"
             params.append(tipo_filtro)
@@ -598,15 +620,17 @@ def recebidos():
         transaction = {
             'date': row[0],
             'description': row[1],
-            'value': row[2],
-            'type': row[3],
+            'value': float(row[2]),
+            'type': row[3] if row[3] else 'DIVERSOS',
             'document': row[4],
             'has_company_info': False
         }
 
         # Update totals
-        total_key = type_mapping.get(transaction['type'], 'diversos')  # Default to 'diversos' if type not found
-        totals[total_key] += abs(transaction['value'])
+        if transaction['type'] in type_mapping:
+            totals[type_mapping[transaction['type']]] += transaction['value']
+        else:
+            totals['diversos'] += transaction['value']
 
         # Format description for known types
         if transaction['type'] in type_mapping:
@@ -638,14 +662,14 @@ def recebidos():
 
     conn.close()
     return render_template('recebidos.html',
-                           transactions=recebidos,
-                           totals=totals,
-                           tipo_filtro=tipo_filtro,
-                           cnpj_filtro=cnpj_filtro,
-                           start_date=start_date,
-                           end_date=end_date,
-                           cnpjs=cnpjs,
-                           failed_cnpjs=len(failed_cnpjs))
+                         transactions=transactions,
+                         totals=totals,
+                         tipo_filtro=tipo_filtro,
+                         cnpj_filtro=cnpj_filtro,
+                         start_date=start_date,
+                         end_date=end_date,
+                         cnpjs=cnpjs,
+                         failed_cnpjs=len(failed_cnpjs))
 
 @app.route('/enviados')
 @login_required
