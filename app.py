@@ -556,7 +556,13 @@ def recebidos():
                 AND t2.description LIKE '%CHEQUE%'
                 AND SIGN(t1.value) != SIGN(t2.value)
         )
-        SELECT DISTINCT t.id, date, description, value, type, document
+        SELECT DISTINCT t.id, date, description, value, 
+            CASE 
+                WHEN value > 0 AND (type NOT IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO') OR type IS NULL)
+                THEN 'DIVERSOS'
+                ELSE type
+            END as type,
+            document
         FROM transactions t
         WHERE value > 0 
         AND t.id NOT IN (SELECT id FROM cheque_pairs)
