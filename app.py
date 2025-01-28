@@ -561,8 +561,8 @@ def recebidos():
     query = '''
         SELECT DISTINCT t.id, date, description, value, 
             CASE 
-                WHEN type IS NULL AND value > 0 THEN 'DIVERSOS'
-                WHEN type NOT IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO', 'DIVERSOS') AND value > 0 THEN 'DIVERSOS'
+                WHEN type IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO') THEN type
+                WHEN value > 0 THEN COALESCE(type, 'DIVERSOS')
                 ELSE type
             END as type,
             document
