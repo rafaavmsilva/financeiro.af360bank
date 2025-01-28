@@ -410,8 +410,8 @@ def process_file_with_progress(filepath, process_id):
                         transaction_type = 'PIX RECEBIDO' if value > 0 else 'PIX ENVIADO'
                     elif 'TED' in description_upper:
                         transaction_type = 'TED RECEBIDA' if value > 0 else 'TED ENVIADA'
-                    elif value > 0:  # Important change: any positive value without specific type becomes DIVERSOS
-                        transaction_type = 'DIVERSOS'
+                    elif value > 0:
+                        transaction_type = 'DIVERSOS'  # Ensure this is being set for positive values
                     else:
                         transaction_type = 'DEBITO'
                 
@@ -549,9 +549,9 @@ def recebidos():
     query = '''
         SELECT DISTINCT t.id, date, description, value, 
             CASE 
-                WHEN value > 0 AND (type NOT IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO') OR type IS NULL)
-                THEN 'DIVERSOS'
-                ELSE COALESCE(type, 'DIVERSOS')
+                WHEN type IS NULL AND value > 0 THEN 'DIVERSOS'
+                WHEN type NOT IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO', 'DIVERSOS') AND value > 0 THEN 'DIVERSOS'
+                ELSE type
             END as type,
             document
         FROM transactions t
