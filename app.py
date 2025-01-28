@@ -35,6 +35,8 @@ AF_COMPANIES = {
     '17814862000150': 'AF 360 FRANQUIAS LTDA'
 }
 
+PRIMARY_TYPES = ['PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO']
+
 # Initialize AuthClient
 auth_client = AuthClient(
     auth_server_url=os.getenv('AUTH_SERVER_URL', 'https://af360bank.onrender.com'),
@@ -590,10 +592,8 @@ def recebidos():
         
     if tipo_filtro != 'todos':
         if tipo_filtro == 'DIVERSOS':
-            query += """ 
-                AND type NOT IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO')
-            """
-        else:
+            query += " AND type NOT IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO')"
+        elif tipo_filtro in PRIMARY_TYPES:
             query += " AND type = ?"
             params.append(tipo_filtro)
 
@@ -621,19 +621,19 @@ def recebidos():
             'description': row[2],
             'value': float(row[3]),
             'original_type': row[4],
-            'type': row[5],  # Use displayed_type from CASE statement
+            'type': row[5],
             'document': row[6],
             'has_company_info': False
         }
 
-        # Update totals based on original type first
+        # Update totals
         type_key = transaction['original_type'].lower().replace(' ', '_')
         if type_key in totals:
             totals[type_key] += transaction['value']
         
-        # 3. Update transaction processing in recebidos:
-        if transaction['original_type'] not in ['PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO']:
-            transaction['type'] = 'DIVERSOS'
+        # If not primary type, add to diversos
+        if transaction['original_type'] not in PRIMARY_TYPES:
+            transaction['type'] = 'DIVERSOS'  # Override display type
             totals['diversos'] += transaction['value']
 
         # Format description
