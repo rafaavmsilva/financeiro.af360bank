@@ -414,18 +414,15 @@ def process_file_with_progress(filepath, process_id):
                         transaction_type = 'PIX RECEBIDO' if value > 0 else 'PIX ENVIADO'
                     elif 'TED' in description_upper:
                         transaction_type = 'TED RECEBIDA' if value > 0 else 'TED ENVIADA'
-                    # If positive value and not PIX/TED, set as DIVERSOS
-                    elif value > 0:
-                        transaction_type = 'DIVERSOS'
                     else:
-                        # For negative values, check secondary types
+                        # Check secondary types first
                         for tipo, keywords in secondary_type_mapping.items():
                             if any(keyword in description_upper for keyword in keywords):
                                 transaction_type = tipo
                                 break
-                        # If still no match, set as DEBITO
+                        # If still no match, set as DIVERSOS/DEBITO
                         if transaction_type is None:
-                            transaction_type = 'DEBITO'
+                            transaction_type = 'DIVERSOS' if value > 0 else 'DEBITO'
 
                 print(f"Tipo de transação detectado: {transaction_type}")
 
@@ -560,17 +557,13 @@ def recebidos():
 
     query = '''
         SELECT DISTINCT t.id, date, description, value, 
-            CASE 
-                WHEN type IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO') THEN type
-                WHEN value > 0 THEN COALESCE(type, 'DIVERSOS')
-                ELSE type
-            END as type,
+            COALESCE(t.type, 'DIVERSOS') as type,
             document
         FROM transactions t
         WHERE value > 0 
         AND document NOT IN ({af_companies})
     '''.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
-    
+
     params = list(AF_COMPANIES.keys())
 
     if tipo_filtro != 'todos':
@@ -578,7 +571,6 @@ def recebidos():
             query += """ 
                 AND (
                     type NOT IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO')
-                    OR type IS NULL
                 )
             """
         else:

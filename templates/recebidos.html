@@ -12,132 +12,115 @@
     </div>
     {% endif %}
     
+    <!-- Summary Card -->
     <div class="row">
         <div class="col">
             <div class="card mb-4">
                 <div class="card-body">
                     <h5 class="card-title">Resumo</h5>
                     <div class="row">
-                        <div class="col-md-4">
-                            <p>Total PIX Recebido: R$ {{ "%.2f"|format(totals.pix_recebido|float)|replace('.', ',') }}</p>
+                        {% for key, value in totals.items() %}
+                        <div class="col-md-3 mb-2">
+                            <p class="mb-0">
+                                {{ key|replace('_', ' ')|title }}: 
+                                R$ {{ "%.2f"|format(value|default(0)|float)|replace('.', ',') }}
+                            </p>
                         </div>
-                        <div class="col-md-4">
-                            <p>Total TED Recebida: R$ {{ "%.2f"|format(totals.ted_recebida|float)|replace('.', ',') }}</p>
-                        </div>
-                        <div class="col-md-4">
-                            <p>Total Pagamentos: R$ {{ "%.2f"|format(totals.pagamento|float)|replace('.', ',') }}</p>
-                        </div>
-                        <div class="col-md-4">
-                            <p>Total Diversos: R$ {{ "%.2f"|format(totals.diversos|float)|replace('.', ',') }}</p>
-                        </div>
+                        {% endfor %}
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Filtros -->
-    <div class="row mb-3">
-        <div class="col-md-4">
-            <div class="btn-group" role="group" aria-label="Filtro de transações">
+    <!-- Filters -->
+    <div class="row mb-4">
+        <div class="col">
+            <!-- Transaction Type Filter -->
+            <div class="btn-group flex-wrap mb-3" role="group" aria-label="Filtro de transações">
                 <a href="{{ url_for('recebidos', tipo='todos', cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
                    class="btn btn-outline-primary {% if tipo_filtro == 'todos' %}active{% endif %}">
-                    Todos
+                   Todos
                 </a>
-                <a href="{{ url_for('recebidos', tipo='PIX RECEBIDO', cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
-                   class="btn btn-outline-success {% if tipo_filtro == 'PIX RECEBIDO' %}active{% endif %}">
-                    PIX
+                {% set tipos = [
+                    ('PIX RECEBIDO', 'success'),
+                    ('TED RECEBIDA', 'info'),
+                    ('PAGAMENTO', 'warning'),
+                    ('CHEQUE', 'dark'),
+                    ('RESGATE', 'primary'),
+                    ('DIVERSOS', 'secondary')
+                ] %}
+                {% for tipo, color in tipos %}
+                <a href="{{ url_for('recebidos', tipo=tipo, cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
+                   class="btn btn-outline-{{ color }} {% if tipo_filtro == tipo %}active{% endif %}">
+                    {{ tipo|replace('_', ' ')|title }}
                 </a>
-                <a href="{{ url_for('recebidos', tipo='TED RECEBIDA', cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
-                   class="btn btn-outline-info {% if tipo_filtro == 'TED RECEBIDA' %}active{% endif %}">
-                    TED
-                </a>
-                <a href="{{ url_for('recebidos', tipo='PAGAMENTO', cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
-                   class="btn btn-outline-warning {% if tipo_filtro == 'PAGAMENTO' %}active{% endif %}">
-                    Pagamentos
-                </a>
-                <a href="{{ url_for('recebidos', tipo='DIVERSOS', cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
-                   class="btn btn-outline-secondary {% if tipo_filtro == 'DIVERSOS' %}active{% endif %}">
-                    Diversos
-                </a>
+                {% endfor %}
             </div>
-        </div>
-        <div class="col-md-4">
-            <div class="form-group">
-                <select class="form-select" id="cnpjFilter" onchange="filterByCNPJ(this.value)">
+
+            <!-- CNPJ Filter -->
+            <div class="mb-3">
+                <select class="form-select" onchange="filterByCNPJ(this.value)">
                     <option value="todos" {% if cnpj_filtro == 'todos' %}selected{% endif %}>Todos os CNPJs</option>
                     {% for cnpj in cnpjs %}
                     <option value="{{ cnpj.cnpj }}" {% if cnpj_filtro == cnpj.cnpj %}selected{% endif %}>
-                        {{ cnpj.name }}
+                        {{ cnpj.name }} ({{ cnpj.cnpj }})
                     </option>
                     {% endfor %}
                 </select>
             </div>
-        </div>
-        <div class="col-md-4">
-            <div class="row">
-                <div class="col-6">
-                    <div class="form-group">
-                        <input type="date" class="form-control" id="startDate" value="{{ start_date }}" onchange="filterByDate()">
-                    </div>
+
+            <!-- Date Filter -->
+            <div class="row mb-3">
+                <div class="col-md-5">
+                    <input type="date" id="startDate" class="form-control" value="{{ start_date }}" 
+                           onchange="filterByDate()">
                 </div>
-                <div class="col-6">
-                    <div class="form-group">
-                        <input type="date" class="form-control" id="endDate" value="{{ end_date }}" onchange="filterByDate()">
-                    </div>
+                <div class="col-md-5">
+                    <input type="date" id="endDate" class="form-control" value="{{ end_date }}" 
+                           onchange="filterByDate()">
                 </div>
             </div>
         </div>
     </div>
 
-    <div class="row">
-        <div class="col">
-            <table class="table table-striped">
-                <thead>
-                    <tr>
-                        <th>Data</th>
-                        <th>Tipo</th>
-                        <th>Descrição</th>
-                        <th>Valor</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for transaction in transactions %}
-                    <tr>
-                        <td>{{ transaction.date }}</td>
-                        <td>
-                            <span class="badge {% if transaction.type == 'PIX RECEBIDO' %}bg-success{% elif transaction.type == 'TED RECEBIDA' %}bg-info{% else %}bg-warning{% endif %}">
-                                {{ transaction.type }}
-                            </span>
-                        </td>
-                        <td>{{ transaction.description }}</td>
-                        <td class="{% if transaction.value > 0 %}text-success{% else %}text-danger{% endif %}">
-                            R$ {{ "%.2f"|format(transaction.value|float)|replace('.', ',') }}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
+    <!-- Transactions Table -->
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Data</th>
+                    <th>Tipo</th>
+                    <th>Descrição</th>
+                    <th>Valor</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for transaction in transactions %}
+                <tr>
+                    <td>{{ transaction.date }}</td>
+                    <td>{{ transaction.type }}</td>
+                    <td>{{ transaction.description }}</td>
+                    <td class="text-end">R$ {{ "%.2f"|format(transaction.value)|replace('.', ',') }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </div>
 
 <script>
-document.getElementById('retryButton')?.addEventListener('click', function() {
-    this.disabled = true;
-    this.textContent = 'Tentando...';
-    
-    fetch('/retry_failed_cnpjs')
+document.getElementById('retryButton').addEventListener('click', function() {
+    fetch('/retry_cnpj')
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                location.reload();
+                window.location.reload();
             } else {
                 alert('Erro ao tentar novamente. Por favor, recarregue a página.');
             }
         })
-        .catch(error => {
-            console.error('Erro:', error);
+        .catch(() => {
             alert('Erro ao tentar novamente. Por favor, recarregue a página.');
         });
 });
