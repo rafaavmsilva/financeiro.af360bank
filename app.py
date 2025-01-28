@@ -579,8 +579,7 @@ def recebidos():
             type as original_type,
             CASE 
                 WHEN type IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO') THEN type
-                WHEN value > 0 THEN 'DIVERSOS'
-                ELSE type
+                ELSE 'DIVERSOS'
             END as displayed_type,
             document
         FROM transactions t
@@ -593,7 +592,7 @@ def recebidos():
     if tipo_filtro != 'todos':
         if tipo_filtro == 'DIVERSOS':
             query += " AND type NOT IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO')"
-        elif tipo_filtro in PRIMARY_TYPES:
+        elif tipo_filtro in ['PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO']:
             query += " AND type = ?"
             params.append(tipo_filtro)
 
@@ -621,7 +620,7 @@ def recebidos():
             'description': row[2],
             'value': float(row[3]),
             'original_type': row[4],
-            'type': row[5],
+            'type': row[5],  # This will be the displayed_type from query
             'document': row[6],
             'has_company_info': False
         }
@@ -632,8 +631,10 @@ def recebidos():
             totals[type_key] += transaction['value']
         
         # If not primary type, add to diversos
-        if transaction['original_type'] not in PRIMARY_TYPES:
-            transaction['type'] = 'DIVERSOS'  # Override display type
+        if transaction['original_type'] in ['PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO']:
+            type_key = transaction['original_type'].lower().replace(' ', '_')
+            totals[type_key] += transaction['value']
+        else:
             totals['diversos'] += transaction['value']
 
         # Format description
