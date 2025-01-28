@@ -410,9 +410,10 @@ def process_file_with_progress(filepath, process_id):
                         transaction_type = 'PIX RECEBIDO' if value > 0 else 'PIX ENVIADO'
                     elif 'TED' in description_upper:
                         transaction_type = 'TED RECEBIDA' if value > 0 else 'TED ENVIADA'
+                    elif value > 0:  # Important change: any positive value without specific type becomes DIVERSOS
+                        transaction_type = 'DIVERSOS'
                     else:
-                        # Tipo genérico baseado no valor
-                        transaction_type = 'DIVERSOS' if value > 0 else 'DEBITO'
+                        transaction_type = 'DEBITO'
                 
                 print(f"Tipo de transação detectado: {transaction_type}")
                 
