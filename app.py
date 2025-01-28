@@ -552,12 +552,20 @@ def recebidos():
         'ted_recebida': 0.0,
         'pagamento': 0.0,
         'cheque': 0.0,
+        'compensacao': 0.0,
+        'resgate': 0.0,
+        'aplicacao': 0.0,
+        'multa': 0.0,
         'diversos': 0.0
     }
 
     query = '''
         SELECT DISTINCT t.id, date, description, value, 
-            COALESCE(t.type, 'DIVERSOS') as type,
+            CASE 
+                WHEN type IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO') THEN type
+                WHEN type IS NULL AND value > 0 THEN 'DIVERSOS'
+                ELSE type 
+            END as type,
             document
         FROM transactions t
         WHERE value > 0 
