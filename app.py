@@ -379,7 +379,10 @@ def process_file_with_progress(filepath, process_id):
                 description_upper = description.upper()
                 transaction_type = None
                 
-                # Primary transaction types
+                # First, check for primary types
+                transaction_type = None
+
+                # Primary type check
                 primary_type_mapping = {
                     'PIX RECEBIDO': ['PIX RECEBIDO'],
                     'PIX ENVIADO': ['PIX ENVIADO'],
@@ -388,6 +391,16 @@ def process_file_with_progress(filepath, process_id):
                     'PAGAMENTO': ['PAGAMENTO', 'PGTO', 'PAG']
                 }
                 
+                # If no primary type found, check PIX/TED in description
+                if transaction_type is None:
+                    if 'PIX' in description_upper:
+                        transaction_type = 'PIX RECEBIDO' if value > 0 else 'PIX ENVIADO'
+                    elif 'TED' in description_upper:
+                        transaction_type = 'TED RECEBIDA' if value > 0 else 'TED ENVIADA'
+                    else:
+                        # If still no match, set as DIVERSOS/DEBITO
+                        transaction_type = 'DIVERSOS' if value > 0 else 'DEBITO'
+
                 # Secondary transaction types
                 secondary_type_mapping = {
                     'TARIFA': ['TARIFA', 'TAR'],
@@ -618,10 +631,10 @@ def recebidos():
         if type_key in totals:
             totals[type_key] += transaction['value']
         
-        # Add to diversos if not primary type
+        # 3. Update transaction processing in recebidos:
         if transaction['original_type'] not in ['PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO']:
+            transaction['type'] = 'DIVERSOS'
             totals['diversos'] += transaction['value']
-            transaction['type'] = 'DIVERSOS'  # Force display as DIVERSOS
 
         # Format description
         if transaction['document']:
