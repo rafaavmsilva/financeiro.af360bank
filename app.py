@@ -564,7 +564,8 @@ def recebidos():
             type as original_type,
             CASE 
                 WHEN type IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO') THEN type
-                ELSE type 
+                WHEN value > 0 THEN 'DIVERSOS'
+                ELSE type
             END as displayed_type,
             document
         FROM transactions t
@@ -607,19 +608,20 @@ def recebidos():
             'description': row[2],
             'value': float(row[3]),
             'original_type': row[4],
-            'type': row[5],  # displayed_type
+            'type': row[5],  # Use displayed_type from CASE statement
             'document': row[6],
             'has_company_info': False
         }
 
-        # Update totals with original_type
+        # Update totals based on original type first
         type_key = transaction['original_type'].lower().replace(' ', '_')
         if type_key in totals:
             totals[type_key] += transaction['value']
         
-        # Also add to diversos if not primary type
+        # Add to diversos if not primary type
         if transaction['original_type'] not in ['PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO']:
             totals['diversos'] += transaction['value']
+            transaction['type'] = 'DIVERSOS'  # Force display as DIVERSOS
 
         # Format description
         if transaction['document']:
