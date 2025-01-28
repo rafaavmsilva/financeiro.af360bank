@@ -12,19 +12,25 @@
     </div>
     {% endif %}
     
-    <!-- Summary Card -->
     <div class="row">
         <div class="col">
             <div class="card mb-4">
                 <div class="card-body">
                     <h5 class="card-title">Resumo</h5>
                     <div class="row">
-                        {% for key, value in totals.items() %}
+                        {% set summary_items = [
+                            ('pix_recebido', 'PIX Recebido'),
+                            ('ted_recebida', 'TED Recebida'),
+                            ('pagamento', 'Pagamentos'),
+                            ('cheque', 'Cheque'),
+                            ('resgate', 'Resgate'),
+                            ('juros', 'Juros'),
+                            ('iof', 'IOF'),
+                            ('diversos', 'Diversos')
+                        ] %}
+                        {% for key, label in summary_items %}
                         <div class="col-md-3 mb-2">
-                            <p class="mb-0">
-                                {{ key|replace('_', ' ')|title }}: 
-                                R$ {{ "%.2f"|format(value|default(0)|float)|replace('.', ',') }}
-                            </p>
+                            <p class="mb-0">Total {{ label }}: R$ {{ "%.2f"|format(totals[key]|float)|replace('.', ',') }}</p>
                         </div>
                         {% endfor %}
                     </div>
@@ -33,94 +39,115 @@
         </div>
     </div>
 
-    <!-- Filters -->
-    <div class="row mb-4">
-        <div class="col">
-            <!-- Transaction Type Filter -->
-            <div class="btn-group flex-wrap mb-3" role="group" aria-label="Filtro de transações">
+    <!-- Filtros -->
+    <div class="row mb-3">
+        <div class="col-md-4">
+            <div class="btn-group" role="group" aria-label="Filtro de transações">
                 <a href="{{ url_for('recebidos', tipo='todos', cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
                    class="btn btn-outline-primary {% if tipo_filtro == 'todos' %}active{% endif %}">
-                   Todos
+                    Todos
                 </a>
-                {% set tipos = [
-                    ('PIX RECEBIDO', 'success'),
-                    ('TED RECEBIDA', 'info'),
-                    ('PAGAMENTO', 'warning'),
-                    ('CHEQUE', 'dark'),
-                    ('RESGATE', 'primary'),
-                    ('DIVERSOS', 'secondary')
+                {% set filter_buttons = [
+                    ('PIX RECEBIDO', 'PIX', 'success'),
+                    ('TED RECEBIDA', 'TED', 'info'),
+                    ('PAGAMENTO', 'Pagamentos', 'warning'),
+                    ('CHEQUE', 'Cheque', 'dark'),
+                    ('RESGATE', 'Resgate', 'primary'),
+                    ('JUROS', 'Juros', 'danger'),
+                    ('IOF', 'IOF', 'info'),
+                    ('DIVERSOS', 'Diversos', 'secondary')
                 ] %}
-                {% for tipo, color in tipos %}
+                {% for tipo, label, color in filter_buttons %}
                 <a href="{{ url_for('recebidos', tipo=tipo, cnpj=cnpj_filtro, start_date=start_date, end_date=end_date) }}" 
                    class="btn btn-outline-{{ color }} {% if tipo_filtro == tipo %}active{% endif %}">
-                    {{ tipo|replace('_', ' ')|title }}
+                    {{ label }}
                 </a>
                 {% endfor %}
             </div>
-
-            <!-- CNPJ Filter -->
-            <div class="mb-3">
-                <select class="form-select" onchange="filterByCNPJ(this.value)">
+        </div>
+        <div class="col-md-4">
+            <div class="form-group">
+                <select class="form-select" id="cnpjFilter" onchange="filterByCNPJ(this.value)">
                     <option value="todos" {% if cnpj_filtro == 'todos' %}selected{% endif %}>Todos os CNPJs</option>
                     {% for cnpj in cnpjs %}
                     <option value="{{ cnpj.cnpj }}" {% if cnpj_filtro == cnpj.cnpj %}selected{% endif %}>
-                        {{ cnpj.name }} ({{ cnpj.cnpj }})
+                        {{ cnpj.name }}
                     </option>
                     {% endfor %}
                 </select>
             </div>
-
-            <!-- Date Filter -->
-            <div class="row mb-3">
-                <div class="col-md-5">
-                    <input type="date" id="startDate" class="form-control" value="{{ start_date }}" 
-                           onchange="filterByDate()">
+        </div>
+        <div class="col-md-4">
+            <div class="row">
+                <div class="col-6">
+                    <div class="form-group">
+                        <input type="date" class="form-control" id="startDate" value="{{ start_date }}" onchange="filterByDate()">
+                    </div>
                 </div>
-                <div class="col-md-5">
-                    <input type="date" id="endDate" class="form-control" value="{{ end_date }}" 
-                           onchange="filterByDate()">
+                <div class="col-6">
+                    <div class="form-group">
+                        <input type="date" class="form-control" id="endDate" value="{{ end_date }}" onchange="filterByDate()">
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Transactions Table -->
-    <div class="table-responsive">
-        <table class="table table-striped">
-            <thead>
-                <tr>
-                    <th>Data</th>
-                    <th>Tipo</th>
-                    <th>Descrição</th>
-                    <th>Valor</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for transaction in transactions %}
-                <tr>
-                    <td>{{ transaction.date }}</td>
-                    <td>{{ transaction.type }}</td>
-                    <td>{{ transaction.description }}</td>
-                    <td class="text-end">R$ {{ "%.2f"|format(transaction.value)|replace('.', ',') }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <div class="row">
+        <div class="col">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Data</th>
+                        <th>Tipo</th>
+                        <th>Descrição</th>
+                        <th>Valor</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for transaction in transactions %}
+                    <tr>
+                        <td>{{ transaction.date }}</td>
+                        <td>
+                            <span class="badge {% if transaction.type == 'PIX RECEBIDO' %}bg-success
+                                {% elif transaction.type == 'TED RECEBIDA' %}bg-info
+                                {% elif transaction.type == 'PAGAMENTO' %}bg-warning
+                                {% elif transaction.type == 'CHEQUE' %}bg-dark
+                                {% elif transaction.type == 'RESGATE' %}bg-primary
+                                {% elif transaction.type == 'JUROS' %}bg-danger
+                                {% elif transaction.type == 'IOF' %}bg-info
+                                {% else %}bg-secondary{% endif %}">
+                                {{ transaction.type }}
+                            </span>
+                        </td>
+                        <td>{{ transaction.description }}</td>
+                        <td class="{% if transaction.value > 0 %}text-success{% else %}text-danger{% endif %}">
+                            R$ {{ "%.2f"|format(transaction.value|float)|replace('.', ',') }}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 
 <script>
-document.getElementById('retryButton').addEventListener('click', function() {
-    fetch('/retry_cnpj')
+document.getElementById('retryButton')?.addEventListener('click', function() {
+    this.disabled = true;
+    this.textContent = 'Tentando...';
+    
+    fetch('/retry_failed_cnpjs')
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                window.location.reload();
+                location.reload();
             } else {
                 alert('Erro ao tentar novamente. Por favor, recarregue a página.');
             }
         })
-        .catch(() => {
+        .catch(error => {
+            console.error('Erro:', error);
             alert('Erro ao tentar novamente. Por favor, recarregue a página.');
         });
 });
