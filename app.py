@@ -546,26 +546,15 @@ def recebidos():
     }
 
     query = '''
-        WITH cheque_pairs AS (
-            SELECT t1.id
-            FROM transactions t1
-            JOIN transactions t2 ON 
-                ABS(t1.value) = ABS(t2.value) 
-                AND t1.date = t2.date
-                AND t1.description LIKE '%CHEQUE%'
-                AND t2.description LIKE '%CHEQUE%'
-                AND SIGN(t1.value) != SIGN(t2.value)
-        )
         SELECT DISTINCT t.id, date, description, value, 
             CASE 
                 WHEN value > 0 AND (type NOT IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO') OR type IS NULL)
                 THEN 'DIVERSOS'
-                ELSE type
+                ELSE COALESCE(type, 'DIVERSOS')
             END as type,
             document
         FROM transactions t
         WHERE value > 0 
-        AND t.id NOT IN (SELECT id FROM cheque_pairs)
         AND document NOT IN ({af_companies})
     '''.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
     
