@@ -705,7 +705,7 @@ def enviados():
     print(f"Filters - tipo: {tipo_filtro}, cnpj: {cnpj_filtro}, start: {start_date}, end: {end_date}")
 
     # Base query excluding AF companies
-    query = '''
+    query = """
         WITH paired_transactions AS (
             SELECT DISTINCT t1.id 
             FROM transactions t1
@@ -722,15 +722,16 @@ def enviados():
             WHERE t2.id IS NOT NULL
         )
         SELECT DISTINCT t.id, t.date, t.description, t.value, 
-               COALESCE(t.type, 'DIVERSOS') as type, 
-               t.document
+            COALESCE(t.type, 'DIVERSOS') as type, 
+            t.document
         FROM transactions t
         WHERE t.value < 0 
         AND (t.document NOT IN ({af_companies}) OR t.document IS NULL)
         AND t.description NOT LIKE '%CANCELAMENTO%'
         AND t.description NOT LIKE '%AF%'
         AND t.id NOT IN (SELECT id FROM paired_transactions)
-    '''.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
+        ORDER BY date DESC
+        """.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
     
     params = list(AF_COMPANIES.keys())
 
@@ -1133,7 +1134,7 @@ def transactions_summary():
     cursor = conn.cursor()
     
     # Get transactions grouped by type, excluding PIX RECEBIDO, TED RECEBIDA, and PAGAMENTO
-    cursor.execute('''
+    cursor.execute("""
         SELECT 
             type,
             COUNT(*) as count,
@@ -1143,7 +1144,7 @@ def transactions_summary():
         WHERE type NOT IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO')
         GROUP BY type
         ORDER BY type, date DESC
-    ''')
+        """)
     
     summary = {}
     for row in cursor.fetchall():
