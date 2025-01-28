@@ -561,12 +561,11 @@ def recebidos():
 
     query = '''
         SELECT DISTINCT t.id, date, description, value, 
+            type as original_type,
             CASE 
                 WHEN type IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO') THEN type
-                WHEN value > 0 THEN 'DIVERSOS'
                 ELSE type 
             END as displayed_type,
-            type as original_type,
             document
         FROM transactions t
         WHERE value > 0 
@@ -607,18 +606,20 @@ def recebidos():
             'date': row[1],
             'description': row[2],
             'value': float(row[3]),
-            'type': row[4],  # Use displayed_type
-            'original_type': row[5],  # Store original_type
+            'original_type': row[4],
+            'type': row[5],  # displayed_type
             'document': row[6],
             'has_company_info': False
         }
 
-        # Update totals
-        original_type = transaction['original_type'].lower().replace(' ', '_') if transaction['original_type'] else 'diversos'
-        if original_type in totals:
-            totals[original_type] += abs(transaction['value'])
-        else:
-            totals['diversos'] += abs(transaction['value'])
+        # Update totals with original_type
+        type_key = transaction['original_type'].lower().replace(' ', '_')
+        if type_key in totals:
+            totals[type_key] += transaction['value']
+        
+        # Also add to diversos if not primary type
+        if transaction['original_type'] not in ['PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO']:
+            totals['diversos'] += transaction['value']
 
         # Format description
         if transaction['document']:
