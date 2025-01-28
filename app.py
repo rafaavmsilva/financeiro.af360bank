@@ -575,25 +575,24 @@ def recebidos():
     }
 
     query = '''
-        SELECT DISTINCT t.id, date, description, value, 
-            type as original_type,
-            CASE 
-                WHEN type IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO') THEN type
-                ELSE 'DIVERSOS'
-            END as displayed_type,
-            document
+        SELECT t.id, t.date, t.description, t.value,
+               t.type AS original_type,
+               CASE
+                   WHEN t.type IN ('PIX RECEBIDO','TED RECEBIDA','PAGAMENTO') THEN t.type
+                   WHEN t.value > 0 THEN 'DIVERSOS'
+                   ELSE t.type
+               END AS displayed_type,
+               t.document
         FROM transactions t
-        WHERE value > 0 
-        AND document NOT IN ({af_companies})
+        WHERE t.value > 0
     '''.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
 
-    params = list(AF_COMPANIES.keys())
-        
+    params = []
     if tipo_filtro != 'todos':
         if tipo_filtro == 'DIVERSOS':
-            query += " AND type NOT IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO')"
-        elif tipo_filtro in ['PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO']:
-            query += " AND type = ?"
+            query += " AND t.type NOT IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO')"
+        elif tipo_filtro in PRIMARY_TYPES:
+            query += " AND t.type = ?"
             params.append(tipo_filtro)
 
     if cnpj_filtro != 'todos':
