@@ -608,21 +608,27 @@ def recebidos():
         params.append(end_date)
 
     query += " ORDER BY date DESC"
-    
     cursor.execute(query, params)
     rows = cursor.fetchall()
 
     transactions = []
     for row in rows:
         transaction = {
+            'id': row[0],
             'date': row[1],
             'description': row[2],
             'value': float(row[3]),
             'original_type': row[4],
-            'type': row[5],  # This will be the displayed_type from query
+            'type': row[5],
             'document': row[6],
             'has_company_info': False
         }
+        
+        # Simplify type
+        if transaction['original_type'] == 'COMPENSACAO':
+            transaction['type'] = 'CHEQUE'
+        elif transaction['original_type'] in ['APLICACAO', 'RESGATE']:
+            transaction['type'] = 'CONTAMAX'
 
         # Update totals
         type_key = transaction['original_type'].lower().replace(' ', '_')
