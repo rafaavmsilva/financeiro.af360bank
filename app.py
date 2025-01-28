@@ -607,15 +607,16 @@ def recebidos():
             'date': row[1],
             'description': row[2],
             'value': float(row[3]),
-            'type': row[4] if row[4] else 'DIVERSOS',
-            'document': row[5],
+            'type': row[4],  # Use displayed_type
+            'original_type': row[5],  # Store original_type
+            'document': row[6],
             'has_company_info': False
         }
 
         # Update totals
-        transaction_type = transaction['type'].lower().replace(' ', '_')
-        if transaction_type in totals:
-            totals[transaction_type] += abs(transaction['value'])
+        original_type = transaction['original_type'].lower().replace(' ', '_') if transaction['original_type'] else 'diversos'
+        if original_type in totals:
+            totals[original_type] += abs(transaction['value'])
         else:
             totals['diversos'] += abs(transaction['value'])
 
