@@ -563,9 +563,10 @@ def recebidos():
         SELECT DISTINCT t.id, date, description, value, 
             CASE 
                 WHEN type IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO') THEN type
-                WHEN type IS NULL AND value > 0 THEN 'DIVERSOS'
+                WHEN value > 0 THEN 'DIVERSOS'
                 ELSE type 
-            END as type,
+            END as displayed_type,
+            type as original_type,
             document
         FROM transactions t
         WHERE value > 0 
@@ -573,13 +574,11 @@ def recebidos():
     '''.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
 
     params = list(AF_COMPANIES.keys())
-
+        
     if tipo_filtro != 'todos':
         if tipo_filtro == 'DIVERSOS':
             query += """ 
-                AND (
-                    type NOT IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO')
-                )
+                AND type NOT IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO')
             """
         else:
             query += " AND type = ?"
