@@ -379,13 +379,17 @@ def process_file_with_progress(filepath, process_id):
                 description_upper = description.upper()
                 transaction_type = None
                 
-                # Mapeamento de palavras-chave para tipos de transação
-                type_mapping = {
+                # Primary transaction types
+                primary_type_mapping = {
                     'PIX RECEBIDO': ['PIX RECEBIDO'],
                     'PIX ENVIADO': ['PIX ENVIADO'],
                     'TED RECEBIDA': ['TED RECEBIDA', 'TED CREDIT'],
                     'TED ENVIADA': ['TED ENVIADA', 'TED DEBIT'],
-                    'PAGAMENTO': ['PAGAMENTO', 'PGTO', 'PAG'],
+                    'PAGAMENTO': ['PAGAMENTO', 'PGTO', 'PAG']
+                }
+                
+                # Secondary transaction types
+                secondary_type_mapping = {
                     'TARIFA': ['TARIFA', 'TAR'],
                     'IOF': ['IOF'],
                     'RESGATE': ['RESGATE'],
@@ -397,26 +401,34 @@ def process_file_with_progress(filepath, process_id):
                     'JUROS': ['JUROS'],
                     'MULTA': ['MULTA']
                 }
-                
-                # Primeiro, tenta encontrar o tipo pela descrição
-                for tipo, keywords in type_mapping.items():
+                # First, check for primary types
+                transaction_type = None
+                for tipo, keywords in primary_type_mapping.items():
                     if any(keyword in description_upper for keyword in keywords):
                         transaction_type = tipo
                         break
-                
-                # Se não encontrou tipo específico, usa PIX/TED baseado no valor
+
+                # If no primary type found, check PIX/TED in description
                 if transaction_type is None:
                     if 'PIX' in description_upper:
                         transaction_type = 'PIX RECEBIDO' if value > 0 else 'PIX ENVIADO'
                     elif 'TED' in description_upper:
                         transaction_type = 'TED RECEBIDA' if value > 0 else 'TED ENVIADA'
+                    # If positive value and not PIX/TED, set as DIVERSOS
                     elif value > 0:
-                        transaction_type = 'DIVERSOS'  # Ensure this is being set for positive values
+                        transaction_type = 'DIVERSOS'
                     else:
-                        transaction_type = 'DEBITO'
-                
+                        # For negative values, check secondary types
+                        for tipo, keywords in secondary_type_mapping.items():
+                            if any(keyword in description_upper for keyword in keywords):
+                                transaction_type = tipo
+                                break
+                        # If still no match, set as DEBITO
+                        if transaction_type is None:
+                            transaction_type = 'DEBITO'
+
                 print(f"Tipo de transação detectado: {transaction_type}")
-                
+
                 # Extrai CNPJ se presente
                 cnpj = None
                 if transaction_type:
