@@ -722,15 +722,15 @@ def enviados():
             WHERE t2.id IS NOT NULL
         )
         SELECT DISTINCT t.id, t.date, t.description, t.value, 
-            COALESCE(t.type, 'DIVERSOS') as type, 
+            COALESCE(t.type, 'DIVERSOS') AS type, 
             t.document
         FROM transactions t
-        WHERE t.value < 0 
+        WHERE t.value < 0
         AND (t.document NOT IN ({af_companies}) OR t.document IS NULL)
         AND t.description NOT LIKE '%CANCELAMENTO%'
         AND t.description NOT LIKE '%AF%'
         AND t.id NOT IN (SELECT id FROM paired_transactions)
-        ORDER BY date DESC
+        ORDER BY t.date DESC
         """.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
     
     params = list(AF_COMPANIES.keys())
