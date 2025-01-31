@@ -18,14 +18,13 @@ from readers.santander import SantanderReader
 from readers.itau import ItauReader
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your-secret-key-here'
+app.config['SECRET_KEY'] = 'dev-key-123'
 app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=1)  # Set session lifetime to 1 hour
 
 # Global variables
 upload_progress = {}  # Dictionary to track file upload progress
-cnpj_cache = {}  # Cache global para armazenar informações de CNPJs
-failed_cnpjs = set()  # Conjunto para armazenar CNPJs que falharam
+cnpj_cache = {}  # Cache for storing company information 
+failed_cnpjs = set()  # Set for storing failed CNPJs
 
 AF_COMPANIES = {
     '50389827000107': 'AF ENERGY SOLAR 360',
@@ -56,7 +55,6 @@ auth_client = AuthClient(
 )
 auth_client.init_app(app)
 
-# Ensure the upload and instance folders exist
 for folder in ['instance', 'uploads']:
     if not os.path.exists(folder):
         os.makedirs(folder)
@@ -66,35 +64,11 @@ RATE_LIMIT_WINDOW = 60  # seconds
 REQUEST_LIMIT = 60      # requests per window
 request_history = {}
 
-@app.route('/auth')
-def auth():
-    token = request.args.get('token')
-    if not token:
-        return redirect('https://af360bank.onrender.com/login')
-    
-    verification = auth_client.verify_token(token)
-    if not verification or not verification.get('valid'):
-        return redirect('https://af360bank.onrender.com/login')
-    
-    # Set session variables
-    session['token'] = token
-    session['authenticated'] = True
-    session.permanent = True  # Make the session last longer
-    
-    return redirect(url_for('index'))
-
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        token = session.get('token')
-        if not token:
-            return redirect('https://af360bank.onrender.com/login')
-        
-        verification = auth_client.verify_token(token)
-        if not verification or not verification.get('valid'):
-            session.clear()
-            return redirect('https://af360bank.onrender.com/login')
-        
+        # Set session as authenticated for local development
+        session['authenticated'] = True
         return f(*args, **kwargs)
     return decorated_function
     
@@ -1085,25 +1059,40 @@ def transactions_summary():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Get transactions grouped by type, excluding PIX RECEBIDO, TED RECEBIDA, and PAGAMENTO
+    # Updated query to include all transaction types
     cursor.execute("""
         SELECT 
-            type,
+            CASE
+                WHEN type IN ('APLICACAO', 'RESGATE') THEN 'CONTAMAX'
+                WHEN type = 'COMPENSACAO' OR type = 'CHEQUE' THEN 'CHEQUE'
+                WHEN type IN ('TAXA', 'TARIFA', 'IOF', 'MULTA', 'DEBITO') THEN 'DESPESAS OPERACIONAIS'
+                ELSE type
+            END as type,
             COUNT(*) as count,
             SUM(value) as total,
             GROUP_CONCAT(description || ' (' || value || ')') as details
         FROM transactions 
-        WHERE type NOT IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO')
-        GROUP BY type
-        ORDER BY type, date DESC
-        """)
+        GROUP BY 
+            CASE
+                WHEN type IN ('APLICACAO', 'RESGATE') THEN 'CONTAMAX'
+                WHEN type = 'COMPENSACAO' OR type = 'CHEQUE' THEN 'CHEQUE'
+                WHEN type IN ('TAXA', 'TARIFA', 'IOF', 'MULTA', 'DEBITO') THEN 'DESPESAS OPERACIONAIS'
+                ELSE type
+            END
+        ORDER BY 
+            CASE 
+                WHEN type IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO') THEN 1
+                ELSE 2
+            END,
+            ABS(SUM(value)) DESC
+    """)
     
     summary = {}
     for row in cursor.fetchall():
-        summary[row['type']] = {
-            'count': row['count'],
-            'total': row['total'],
-            'details': row['details'].split(',') if row['details'] else []
+        summary[row[0]] = {
+            'count': row[1],
+            'total': row[2],
+            'details': row[3].split(',') if row[3] else []
         }
     
     conn.close()
@@ -1201,5 +1190,4 @@ def extract_and_enrich_cnpj(description, transaction_type):
     return description
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5002))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(debug=True, port=5000)
