@@ -483,7 +483,7 @@ def create_companies_table():
     conn.commit()
     conn.close()
 
-app.route('/recebidos')
+@app.route('/recebidos')
 @login_required
 def recebidos():
     conn = get_db_connection()
