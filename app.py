@@ -37,6 +37,18 @@ AF_COMPANIES = {
 
 PRIMARY_TYPES = ['PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO']
 
+TYPE_MAPPING = {
+    'APLICACAO': 'CONTAMAX',
+    'RESGATE': 'CONTAMAX',
+    'COMPENSACAO': 'CHEQUE',
+    'COMPRA': 'CARTAO',
+    'TAXA': 'DESPESAS OPERACIONAIS',
+    'TARIFA': 'DESPESAS OPERACIONAIS',
+    'IOF': 'DESPESAS OPERACIONAIS',
+    'MULTA': 'DESPESAS OPERACIONAIS',
+    'DEBITO': 'DESPESAS OPERACIONAIS',
+}
+
 # Initialize AuthClient
 auth_client = AuthClient(
     auth_server_url=os.getenv('AUTH_SERVER_URL', 'https://af360bank.onrender.com'),
@@ -148,27 +160,80 @@ init_db()
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'xls', 'xlsx'}
 
-def get_company_info(cnpj):
-    """Fetch company information using cache if available"""
-    # Check if already in cache
-    if cnpj in cnpj_cache:
-        return cnpj_cache[cnpj]
+def get_company_info(cnpj, enrich_description=True):
+    """
+    Fetch company information using cache if available and optionally enrich description
     
+    Args:
+        cnpj: CNPJ number to lookup
+        enrich_description: Whether to return enriched description format
+    """
+    # Handle 15-digit CNPJ
+    api_cnpj = cnpj
+    if len(cnpj) == 15 and cnpj.startswith('0'):
+        api_cnpj = cnpj[1:]
+
+    # Check cache first
+    if cnpj in cnpj_cache:
+        company_info = cnpj_cache[cnpj]
+        if enrich_description:
+            return format_company_info(company_info, cnpj)
+        return company_info
+
+    # Skip if previously failed
+    if cnpj in failed_cnpjs:
+        return None
+
     try:
-        response = requests.get(f'https://brasilapi.com.br/api/cnpj/v1/{cnpj}')
+        # Configure retry strategy
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=0.5,
+            status_forcelist=[429, 500, 502, 503, 504],
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        session = requests.Session()
+        session.mount("https://", adapter)
+
+        # Make API request
+        response = session.get(
+            f'https://brasilapi.com.br/api/cnpj/v1/{api_cnpj}',
+            timeout=5
+        )
+        
         if response.status_code == 200:
             company_info = response.json()
-            # Store in cache
             cnpj_cache[cnpj] = company_info
+            
+            # Remove from failed if successful
             if cnpj in failed_cnpjs:
                 failed_cnpjs.remove(cnpj)
+            
+            if enrich_description:
+                return format_company_info(company_info, cnpj)
             return company_info
+            
         else:
             failed_cnpjs.add(cnpj)
+            print(f"Failed to fetch CNPJ {cnpj}: Status {response.status_code}")
+            return None
+            
     except Exception as e:
-        print(f"Error fetching company information: {e}")
+        print(f"Error fetching CNPJ {cnpj}: {str(e)}")
         failed_cnpjs.add(cnpj)
-    return None
+        return None
+
+def format_company_info(company_info, cnpj):
+    """Format company info for display"""
+    return {
+        'cnpj': cnpj,
+        'nome_fantasia': company_info.get('nome_fantasia', ''),
+        'razao_social': company_info.get('razao_social', ''),
+        'formatted_name': (
+            company_info.get('nome_fantasia') or 
+            company_info.get('razao_social', '')
+        ) + f" (CNPJ: {cnpj})"
+    }
 
 def is_af_company_transaction(description):
     """Check if transaction description contains an AF company name"""
@@ -186,57 +251,41 @@ def index():
 @rate_limit()
 def upload_file():
     try:
-        if not session.get('authenticated'):
-            return redirect('https://af360bank.onrender.com/login')
-        
         if 'file' not in request.files:
-            return jsonify({'success': False, 'message': 'Nenhum arquivo selecionado'})
+            return jsonify({'error': 'No file provided'}), 400
         
         file = request.files['file']
-        bank_type = request.form.get('bank_type')
-        
         if file.filename == '':
-            return jsonify({'success': False, 'message': 'Nenhum arquivo selecionado'})
+            return jsonify({'error': 'No file selected'}), 400
+            
+        if not allowed_file(file.filename):
+            return jsonify({'error': 'Invalid file type'}), 400
+
+        filename = secure_filename(file.filename)
+        process_id = str(uuid.uuid4())
         
-        if file and allowed_file(file.filename):
-            filename = secure_filename(file.filename)
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(filepath)
-            
-            # Initialize progress
-            process_id = str(uuid.uuid4())
-            upload_progress[process_id] = {
-                'status': 'processing',
-                'current': 0,
-                'total': 0,
-                'message': 'Iniciando processamento...'
-            }
-            
-            # Select reader based on bank type
-            if bank_type == 'santander':
-                reader = SantanderReader()
-            elif bank_type == 'itau':
-                reader = ItauReader()
-            else:
-                return jsonify({'success': False, 'message': 'Banco não suportado'})
-            
-            # Process file in separate thread
-            thread = threading.Thread(
-                target=reader.process_file, 
-                args=(filepath, process_id, upload_progress)
-            )
-            thread.start()
-            
-            return jsonify({
-                'success': True,
-                'process_id': process_id,
-                'message': 'Arquivo enviado e sendo processado'
-            })
+        # Initialize progress tracker
+        upload_progress[process_id] = {
+            'status': 'processing',
+            'progress': 0,
+            'total': 0,
+            'message': 'Iniciando processamento...'
+        }
         
-        return jsonify({'success': False, 'message': 'Tipo de arquivo não permitido'})
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        
+        # Start processing in background
+        thread = threading.Thread(target=process_file_with_progress, args=(filepath, process_id))
+        thread.start()
+        
+        return jsonify({
+            'message': 'Upload iniciado',
+            'process_id': process_id
+        }), 202
         
     except Exception as e:
-        return jsonify({'success': False, 'message': f'Erro ao processar arquivo: {str(e)}'})
+        return jsonify({'error': str(e)}), 500
 
 def find_matching_column(df, column_names):
     for col in df.columns:
@@ -270,6 +319,10 @@ def process_file_with_progress(filepath, process_id):
     try:
         print(f"Iniciando processamento do arquivo: {filepath}")
         
+        # Initialize database connection
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
         # First read without header to find correct structure
         df_init = pd.read_excel(filepath, header=None)
         header_row = None
@@ -278,12 +331,8 @@ def process_file_with_progress(filepath, process_id):
         # Find header row and data start position
         for idx, row in df_init.iterrows():
             row_values = [str(x).strip() for x in row if pd.notna(x)]
-            
-            # Skip empty rows
             if not row_values:
                 continue
-                
-            # Check if this is the header row (contains 'Data' and 'Histórico')
             if 'Data' in row_values and 'Histórico' in row_values:
                 header_row = idx
                 data_start = idx + 1
@@ -292,20 +341,19 @@ def process_file_with_progress(filepath, process_id):
         if header_row is None:
             raise Exception("Header 'Data' não encontrado")
         
-        # Re-read file with correct header and data
+        # Read file with correct header
         df = pd.read_excel(filepath, skiprows=header_row)
-        
-        # Clean up column names
         df.columns = [str(col).strip() for col in df.columns]
         
-        print(f"Arquivo lido com sucesso. Total de linhas: {len(df)}")
-        print(f"Colunas encontradas: {df.columns.tolist()}")
-        
+        # Update progress
         total_rows = len(df)
-        upload_progress[process_id]['total'] = total_rows
-        upload_progress[process_id]['message'] = 'Lendo arquivo...'
+        upload_progress[process_id].update({
+            'total': total_rows,
+            'message': 'Lendo arquivo...',
+            'progress': 0
+        })
         
-        # Find required columns using more specific matching
+        # Find required columns
         data_col = find_matching_column(df, ['Data'])
         desc_col = find_matching_column(df, ['Histórico'])
         valor_col = find_matching_column(df, ['Valor (R$)', 'Valor'])
@@ -313,197 +361,87 @@ def process_file_with_progress(filepath, process_id):
         if not all([data_col, desc_col, valor_col]):
             raise Exception(f"Colunas necessárias não encontradas. Colunas disponíveis: {df.columns.tolist()}")
         
-        # Filter out rows where data column is empty or contains agency info
+        # Filter rows
         df = df[pd.notna(df[data_col])]
         df = df[~df[data_col].astype(str).str.contains('0715')]
         
-        # Conecta ao banco de dados
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Processa cada linha
+        # Process rows
         processed_rows = 0
         for index, row in df.iterrows():
-            # Atualiza o progresso
-            upload_progress[process_id]['current'] = index + 1
-            upload_progress[process_id]['message'] = f'Processando linha {index + 1} de {total_rows}'
+            upload_progress[process_id].update({
+                'current': index + 1,
+                'message': f'Processando linha {index + 1} de {total_rows}'
+            })
             
             try:
-                # Processa a data
-                data = row[data_col]
-                if pd.isna(data):
-                    continue
+                # Process date
+                date = pd.to_datetime(row[data_col]).date()
                 
-                try:
-                    if isinstance(data, str):
-                        try:
-                            date = datetime.strptime(data, '%d/%m/%Y').date()
-                        except ValueError:
-                            try:
-                                date = datetime.strptime(data, '%Y-%m-%d').date()
-                            except ValueError:
-                                print(f"Erro ao processar linha {index + 1}: 'Data'")
-                                print(f"Dados da linha: {row.to_dict()}")
-                                continue
-                    elif isinstance(data, datetime):
-                        date = data.date()
-                    else:
-                        try:
-                            date = pd.to_datetime(data).date()
-                        except:
-                            print(f"Erro ao processar linha {index + 1}: 'Data'")
-                            print(f"Dados da linha: {row.to_dict()}")
-                            continue
-                except Exception as e:
-                    print(f"Erro ao processar linha {index + 1}: 'Data'")
-                    print(f"Dados da linha: {row.to_dict()}")
-                    continue
-                
-                # Processa a descrição
+                # Process description and CNPJ
                 description = str(row[desc_col]).strip()
                 if pd.isna(description) or not description:
                     continue
                 
-                # Processa o valor
-                value = row[valor_col]
-                if pd.isna(value):
-                    continue
+                # Process value
+                value = float(str(row[valor_col]).replace('R$', '').strip().replace('.', '').replace(',', '.'))
                 
-                if isinstance(value, (int, float)):
-                    value = float(value)
-                else:
-                    value_str = str(value).replace('R$', '').strip()
-                    value = float(value_str.replace('.', '').replace(',', '.'))
+                # Detect transaction type
+                transaction_type = detect_transaction_type(description, value)
                 
-                print(f"Processando linha {index + 1}: Data={date}, Valor={value}")
+                # Extract and lookup CNPJ
+                cnpj = extract_cnpj(description)
+                if cnpj and cnpj not in AF_COMPANIES:
+                    try:
+                        company_info = get_company_info(cnpj)
+                        if company_info:
+                            razao_social = company_info.get('razao_social', '')
+                            description = description.replace(
+                                cnpj, 
+                                f"{razao_social} (CNPJ: {cnpj})"
+                            )
+                    except Exception as e:
+                        print(f"Error looking up CNPJ {cnpj}: {str(e)}")
                 
-                # Detecta o tipo de transação
-                description_upper = description.upper()
-                transaction_type = None
+                # Map transaction type
+                mapped_type = TYPE_MAPPING.get(transaction_type, transaction_type)
                 
-                # First, check for primary types
-                transaction_type = None
-
-                # Primary type check
-                primary_type_mapping = {
-                    'PIX RECEBIDO': ['PIX RECEBIDO'],
-                    'PIX ENVIADO': ['PIX ENVIADO'],
-                    'TED RECEBIDA': ['TED RECEBIDA', 'TED CREDIT'],
-                    'TED ENVIADA': ['TED ENVIADA', 'TED DEBIT'],
-                    'PAGAMENTO': ['PAGAMENTO', 'PGTO', 'PAG']
-                }
-                
-                # If no primary type found, check PIX/TED in description
-                if transaction_type is None:
-                    if 'PIX' in description_upper:
-                        transaction_type = 'PIX RECEBIDO' if value > 0 else 'PIX ENVIADO'
-                    elif 'TED' in description_upper:
-                        transaction_type = 'TED RECEBIDA' if value > 0 else 'TED ENVIADA'
-                    else:
-                        # If still no match, set as DIVERSOS/DEBITO
-                        transaction_type = 'DIVERSOS' if value > 0 else 'DEBITO'
-
-                # Secondary transaction types
-                secondary_type_mapping = {
-                    'TARIFA': ['TARIFA', 'TAR'],
-                    'IOF': ['IOF'],
-                    'RESGATE': ['RESGATE'],
-                    'APLICACAO': ['APLICACAO', 'APLICAÇÃO'],
-                    'COMPRA': ['COMPRA'],
-                    'COMPENSACAO': ['COMPENSACAO', 'COMPENSAÇÃO'],
-                    'CHEQUE': ['CHEQUE'],
-                    'TRANSFERENCIA': ['TRANSFERENCIA', 'TRANSF'],
-                    'JUROS': ['JUROS'],
-                    'MULTA': ['MULTA']
-                }
-                # First, check for primary types
-                transaction_type = None
-                for tipo, keywords in primary_type_mapping.items():
-                    if any(keyword in description_upper for keyword in keywords):
-                        transaction_type = tipo
-                        break
-
-                # If no primary type found, check PIX/TED in description
-                if transaction_type is None:
-                    if 'PIX' in description_upper:
-                        transaction_type = 'PIX RECEBIDO' if value > 0 else 'PIX ENVIADO'
-                    elif 'TED' in description_upper:
-                        transaction_type = 'TED RECEBIDA' if value > 0 else 'TED ENVIADA'
-                    else:
-                        # Check secondary types first
-                        for tipo, keywords in secondary_type_mapping.items():
-                            if any(keyword in description_upper for keyword in keywords):
-                                transaction_type = tipo
-                                break
-                        # If still no match, set as DIVERSOS/DEBITO
-                        if transaction_type is None:
-                            transaction_type = 'DIVERSOS' if value > 0 else 'DEBITO'
-
-                print(f"Tipo de transação detectado: {transaction_type}")
-
-                # Extrai CNPJ se presente
-                cnpj = None
-                if transaction_type:
-                    # Find sequence of 14 digits that could be a CNPJ
-                    import re
-                    
-                    # Try different CNPJ patterns
-                    cnpj_patterns = [
-                        r'CNPJ[:\s]*(\d{14,15})',  # CNPJ followed by 14 or 15 digits
-                        r'CNPJ[:\s]*(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})',  # CNPJ followed by formatted number
-                        r'\b(\d{14,15})\b',  # Just 14 or 15 digits
-                        r'\b(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})\b'  # Formatted CNPJ
-                    ]
-                    
-                    cnpj_match = None
-                    for pattern in cnpj_patterns:
-                        match = re.search(pattern, description)
-                        if match:
-                            cnpj_match = match
-                            break
-                    
-                    if cnpj_match:
-                        # Extract CNPJ and handle 15-digit case
-                        cnpj = ''.join(filter(str.isdigit, cnpj_match.group(1)))
-                        if len(cnpj) == 15 and cnpj.startswith('0'):
-                            cnpj = cnpj[1:]  # Remove first zero only if 15 digits
-                        elif len(cnpj) != 14:
-                            cnpj = None  # Invalid CNPJ length
-                
-                # Insere no banco de dados
+                # Insert with enriched description
                 cursor.execute('''
                     INSERT INTO transactions (date, description, value, type, transaction_type, document)
                     VALUES (?, ?, ?, ?, ?, ?)
-                ''', (date.strftime('%Y-%m-%d'), description, value, transaction_type, 'receita' if value > 0 else 'despesa', cnpj))
+                ''', (
+                    date.strftime('%Y-%m-%d'),
+                    description,
+                    value,
+                    mapped_type,
+                    'receita' if value > 0 else 'despesa',
+                    cnpj
+                ))
                 
                 processed_rows += 1
                 
             except Exception as row_error:
                 print(f"Erro ao processar linha {index + 1}: {str(row_error)}")
-                print(f"Dados da linha: {row.to_dict()}")
                 continue
         
-        # Commit e fecha conexão
+        # Commit and close
         conn.commit()
         conn.close()
         
-        print(f"Processamento concluído. Total de linhas processadas: {processed_rows}")
+        # Update final status
+        upload_progress[process_id].update({
+            'status': 'completed',
+            'message': f'Processamento concluído! {processed_rows} transações importadas.'
+        })
         
-        # Atualiza status final
-        upload_progress[process_id]['status'] = 'completed'
-        upload_progress[process_id]['message'] = f'Processamento concluído! {processed_rows} transações importadas.'
-        
-        # Remove o arquivo após processamento
         os.remove(filepath)
         
     except Exception as e:
         print(f"Erro geral no processamento: {str(e)}")
-        if 'df' in locals():
-            print("Exemplo das primeiras linhas do DataFrame:")
-            print(df.head())
-        
-        upload_progress[process_id]['status'] = 'error'
-        upload_progress[process_id]['message'] = f'Erro: {str(e)}'
+        upload_progress[process_id].update({
+            'status': 'error',
+            'message': f'Erro: {str(e)}'
+        })
 
 @app.route('/upload_progress/<process_id>')
 @login_required
@@ -545,12 +483,9 @@ def create_companies_table():
     conn.commit()
     conn.close()
 
-@app.route('/recebidos')
+app.route('/recebidos')
 @login_required
 def recebidos():
-    if not session.get('authenticated'):
-        return redirect('https://af360bank.onrender.com/login')
-    
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -560,37 +495,44 @@ def recebidos():
     start_date = request.args.get('start_date', '')
     end_date = request.args.get('end_date', '')
 
+    # Updated totals structure
     totals = {
-        'juros': 0.0,
-        'iof': 0.0,
         'pix_recebido': 0.0,
         'ted_recebida': 0.0,
         'pagamento': 0.0,
         'cheque': 0.0,
-        'compensacao': 0.0,
-        'resgate': 0.0,
-        'aplicacao': 0.0,
-        'multa': 0.0,
+        'contamax': 0.0,
+        'despesas_operacionais': 0.0,
         'diversos': 0.0
     }
 
+    # Base query
     query = '''
         SELECT t.id, t.date, t.description, t.value,
                t.type AS original_type,
                CASE
-                   WHEN t.type IN ('PIX RECEBIDO','TED RECEBIDA','PAGAMENTO') THEN t.type
-                   WHEN t.value > 0 THEN 'DIVERSOS'
-                   ELSE t.type
+                   WHEN t.type IN ('APLICACAO', 'RESGATE') THEN 'CONTAMAX'
+                   WHEN t.type IN ('COMPENSACAO', 'CHEQUE') THEN 'CHEQUE'
+                   WHEN t.type IN ('TAXA', 'TARIFA', 'IOF', 'MULTA', 'DEBITO') THEN 'DESPESAS OPERACIONAIS'
+                   WHEN t.type IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO') THEN t.type
+                   ELSE 'DIVERSOS'
                END AS displayed_type,
                t.document
         FROM transactions t
         WHERE t.value > 0
-    '''.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
+    '''
 
+    # Build query with filters
     params = []
     if tipo_filtro != 'todos':
         if tipo_filtro == 'DIVERSOS':
             query += " AND t.type NOT IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO')"
+        elif tipo_filtro == 'CHEQUE':
+            query += " AND t.type IN ('CHEQUE', 'COMPENSACAO')"
+        elif tipo_filtro == 'CONTAMAX':
+            query += " AND t.type IN ('APLICACAO', 'RESGATE')"
+        elif tipo_filtro == 'DESPESAS OPERACIONAIS':
+            query += " AND t.type IN ('TAXA', 'TARIFA', 'IOF', 'MULTA', 'DEBITO')"
         elif tipo_filtro in PRIMARY_TYPES:
             query += " AND t.type = ?"
             params.append(tipo_filtro)
@@ -607,54 +549,45 @@ def recebidos():
         query += " AND date <= ?"
         params.append(end_date)
 
+    # Execute query
     query += " ORDER BY date DESC"
     cursor.execute(query, params)
     rows = cursor.fetchall()
 
+    # Process transactions
     transactions = []
     for row in rows:
+        original_type = row[4]
+        mapped_type = row[5]  # Use the mapped type from query
+        
         transaction = {
-            'id': row[0],
             'date': row[1],
             'description': row[2],
             'value': float(row[3]),
-            'original_type': row[4],
-            'type': row[5],
+            'type': mapped_type,
+            'original_type': original_type,
             'document': row[6],
             'has_company_info': False
         }
-        
-        # Simplify type
-        if transaction['original_type'] == 'COMPENSACAO':
-            transaction['type'] = 'CHEQUE'
-        elif transaction['original_type'] in ['APLICACAO', 'RESGATE']:
-            transaction['type'] = 'CONTAMAX'
-
+         
+        # Update type-specific descriptions
+        if transaction['type'] == 'CHEQUE':
+            transaction['description'] = f"CHEQUE - {transaction['description']}"
+        elif transaction['type'] == 'CONTAMAX':
+            transaction['description'] = f"CONTAMAX - {transaction['description']}"
+        elif transaction['type'] == 'DESPESAS OPERACIONAIS':
+            transaction['description'] = f"DESPESAS - {transaction['description']}"
+            
         # Update totals
-        type_key = transaction['original_type'].lower().replace(' ', '_')
+        type_key = transaction['type'].lower().replace(' ', '_')
         if type_key in totals:
-            totals[type_key] += transaction['value']
-        
-        # If not primary type, add to diversos
-        if transaction['original_type'] in ['PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO']:
-            type_key = transaction['original_type'].lower().replace(' ', '_')
             totals[type_key] += transaction['value']
         else:
             totals['diversos'] += transaction['value']
-
-        # Format description
-        if transaction['document']:
-            company_info = get_company_info(transaction['document'])
-            if company_info:
-                company_name = company_info.get('nome_fantasia') or company_info.get('razao_social', '')
-                if company_name:
-                    cnpj_sem_zeros = str(int(transaction['document']))
-                    transaction['description'] = f"{transaction['type']} {company_name} ({cnpj_sem_zeros})"
-                    transaction['has_company_info'] = True
-
+            
         transactions.append(transaction)
 
-    # Define cnpjs from cache excluding AF companies
+    # Get unique CNPJs for dropdown
     cnpjs = [
         {'cnpj': cnpj, 'name': info.get('nome_fantasia') or info.get('razao_social', '')} 
         for cnpj, info in cnpj_cache.items() 
@@ -681,120 +614,94 @@ def enviados():
     conn = get_db_connection()
     cursor = conn.cursor()
 
+    # Initialize totals with all possible types
+    transactions = []
+    totals = {
+        'pix_enviado': 0.0,
+        'ted_enviada': 0.0, 
+        'pagamento': 0.0,
+        'juros': 0.0,
+        'cartao': 0.0,
+        'cheque': 0.0,
+        'contamax': 0.0,
+        'despesas_operacionais': 0.0,
+        'diversos': 0.0
+    }
+
     # Get filters
     tipo_filtro = request.args.get('tipo', 'todos')
     cnpj_filtro = request.args.get('cnpj', 'todos')
     start_date = request.args.get('start_date', '')
     end_date = request.args.get('end_date', '')
 
-    # Initialize totals with all possible types
-    totals = {
-        'juros': 0.0,
-        'iof': 0.0,
-        'pix_enviado': 0.0,
-        'ted_enviada': 0.0,
-        'pagamento': 0.0,
-        'cheque': 0.0,
-        'compensacao': 0.0,
-        'aplicacao': 0.0,
-        'multa': 0.0,
-        'diversos': 0.0
-    }
-
     # Debug: Print filter values
     print(f"Filters - tipo: {tipo_filtro}, cnpj: {cnpj_filtro}, start: {start_date}, end: {end_date}")
 
     # Base query excluding AF companies
-    query = """
-        WITH paired_transactions AS (
-            SELECT DISTINCT t1.id 
-            FROM transactions t1
-            LEFT JOIN transactions t2 ON 
-                ABS(t1.value) = ABS(t2.value) 
-                AND t1.date = t2.date
-                AND (
-                    (t1.description LIKE '%CHEQUE%' AND t2.description LIKE '%DEVOL%')
-                    OR (t1.description LIKE '%COMPENSACAO%' AND t2.description LIKE '%CHEQUE%')
-                    OR (t1.description LIKE '%APLICACAO%' AND t2.description LIKE '%RESGATE%')
-                )
-                AND t1.value < 0
-                AND t2.value > 0
-            WHERE t2.id IS NOT NULL
-        )
-        SELECT DISTINCT t.id, t.date, t.description, t.value, 
-            COALESCE(t.type, 'DIVERSOS') AS type, 
+    base_query = """
+        SELECT DISTINCT t.id, t.date, t.description, t.value,
+            CASE
+                WHEN t.type IN ('APLICACAO', 'RESGATE') THEN 'CONTAMAX'
+                WHEN t.type = 'COMPENSACAO' OR t.type = 'CHEQUE' THEN 'CHEQUE'
+                WHEN t.type = 'COMPRA' THEN 'CARTAO'
+                WHEN t.type IN ('TAXA', 'TARIFA', 'IOF', 'MULTA', 'DEBITO') 
+                    OR t.description LIKE '%TARIFA%'
+                    OR t.description LIKE '%TAXA%' THEN 'DESPESAS OPERACIONAIS'
+                ELSE t.type
+            END AS type,
             t.document
         FROM transactions t
         WHERE t.value < 0
-        AND (t.document NOT IN ({af_companies}) OR t.document IS NULL)
-        AND t.description NOT LIKE '%CANCELAMENTO%'
-        AND t.description NOT LIKE '%AF%'
-        AND t.id NOT IN (SELECT id FROM paired_transactions)
-        ORDER BY t.date DESC
-        """.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
+    """
     
-    params = list(AF_COMPANIES.keys())
-
-    if tipo_filtro != 'todos':
-        if tipo_filtro == 'DIVERSOS':
-            query += """ 
-                AND (
-                    type NOT IN ('PIX ENVIADO', 'TED ENVIADA', 'PAGAMENTO', 'CHEQUE', 'COMPENSACAO', 'APLICACAO')
-                    OR type IS NULL
-                )
-            """
-        else:
-            query += " AND type = ?"
-            params.append(tipo_filtro)
-
+    params = []
+    conditions = []
+    
+    if tipo_filtro == 'CHEQUE':
+        conditions.append(" AND (t.type = 'CHEQUE' OR t.type = 'COMPENSACAO')")
+    elif tipo_filtro == 'CONTAMAX':
+        conditions.append(" AND (t.type = 'APLICACAO' OR t.type = 'RESGATE')")
+    elif tipo_filtro == 'DESPESAS OPERACIONAIS':
+        conditions.append(" AND t.type IN ('TAXA', 'TARIFA', 'IOF', 'MULTA', 'DEBITO')")
+    elif tipo_filtro != 'todos':
+        conditions.append(" AND t.type = ?")
+        params.append(tipo_filtro)
+        
     if cnpj_filtro != 'todos':
-        query += " AND document = ?"
+        conditions.append(" AND document = ?")
         params.append(cnpj_filtro)
-
+        
     if start_date:
-        query += " AND date >= ?"
+        conditions.append(" AND date >= ?")
         params.append(start_date)
-
+        
     if end_date:
-        query += " AND date <= ?"
+        conditions.append(" AND date <= ?")
         params.append(end_date)
-
-    query += " ORDER BY date DESC"
-
-    # Debug: Print query and params
-    print("Query:", query)
-    print("Params:", params)
-
+    
+    # Execute query
+    query = base_query + ''.join(conditions) + " ORDER BY date DESC"
     cursor.execute(query, params)
     rows = cursor.fetchall()
 
-    transactions = []
+    # Process results
     for row in rows:
         transaction = {
             'date': row[1],
             'description': row[2],
             'value': float(row[3]),
-            'type': row[4],
+            'type': row[4],  # Already mapped in SQL query
             'document': row[5],
             'has_company_info': False
         }
-
-        # Update totals with the correct transaction type
-        transaction_type = transaction['type'].lower().replace(' ', '_')
-        if transaction_type in totals:
-            totals[transaction_type] += abs(transaction['value'])
+        
+        # Update totals
+        type_key = transaction['type'].lower().replace(' ', '_')
+        if type_key in totals:
+            totals[type_key] += abs(transaction['value'])
         else:
             totals['diversos'] += abs(transaction['value'])
-
-        # Format description with company info
-        if transaction['document']:
-            company_info = get_company_info(transaction['document'])
-            if company_info:
-                company_name = company_info.get('nome_fantasia') or company_info.get('razao_social', '')
-                if company_name:
-                    transaction['description'] = f"{transaction['type']} - {company_name}"
-                    transaction['has_company_info'] = True
-
+            
         transactions.append(transaction)
 
     # Debug: Print results
