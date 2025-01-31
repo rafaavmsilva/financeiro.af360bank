@@ -292,95 +292,49 @@ def extract_transaction_info(description, value):
 
 def process_file_with_progress(filepath, process_id):
     try:
-        print(f"Iniciando processamento do arquivo: {filepath}")
-        
-        # Initialize database connection
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # First read without header to find correct structure
-        df_init = pd.read_excel(filepath, header=None)
-        header_row = None
-        data_start = None
-        
-        # Find header row and data start position
-        for idx, row in df_init.iterrows():
-            row_values = [str(x).strip() for x in row if pd.notna(x)]
-            if not row_values:
-                continue
-            if 'Data' in row_values and 'Histórico' in row_values:
-                header_row = idx
-                data_start = idx + 1
-                break
-        
-        if header_row is None:
-            raise Exception("Header 'Data' não encontrado")
-        
-        # Read file with correct header
-        df = pd.read_excel(filepath, skiprows=header_row)
-        df.columns = [str(col).strip() for col in df.columns]
-        
-        # Update progress
+        # Initialize upload progress
+        df = pd.read_excel(filepath, header=None)
         total_rows = len(df)
         upload_progress[process_id].update({
             'total': total_rows,
-            'message': 'Lendo arquivo...',
-            'progress': 0
+            'message': 'Processing file...'
         })
-        
-        # Find required columns
-        data_col = find_matching_column(df, ['Data'])
-        desc_col = find_matching_column(df, ['Histórico'])
-        valor_col = find_matching_column(df, ['Valor (R$)', 'Valor'])
-        
-        if not all([data_col, desc_col, valor_col]):
-            raise Exception(f"Colunas necessárias não encontradas. Colunas disponíveis: {df.columns.tolist()}")
-        
-        # Filter rows
-        df = df[pd.notna(df[data_col])]
-        df = df[~df[data_col].astype(str).str.contains('0715')]
-        
-        # Process rows
-        processed_rows = 0
+
+        # Process each row
         for index, row in df.iterrows():
-            upload_progress[process_id].update({
-                'current': index + 1,
-                'message': f'Processando linha {index + 1} de {total_rows}'
-            })
-            
             try:
-                # Process date
+                # Initialize variables
+                cnpj = None
                 date = pd.to_datetime(row[data_col]).date()
-                
-                # Process description and CNPJ
                 description = str(row[desc_col]).strip()
-                if pd.isna(description) or not description:
-                    continue
-                
-                # Process value
                 value = float(str(row[valor_col]).replace('R$', '').strip().replace('.', '').replace(',', '.'))
                 
-                # Detect transaction type
-                transaction_type = detect_transaction_type(description, value)
+                # Extract CNPJ if present
+                cnpj_match = re.search(r'(?:\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}|\d{14})', description)
+                if cnpj_match:
+                    cnpj = ''.join(filter(str.isdigit, cnpj_match.group()))
                 
-                # Extract and lookup CNPJ
-                cnpj = cnpj(description)
+                # Process CNPJ and enrich description
                 if cnpj and cnpj not in AF_COMPANIES:
                     try:
                         company_info = get_company_info(cnpj)
                         if company_info:
                             razao_social = company_info.get('razao_social', '')
                             description = description.replace(
-                                cnpj, 
+                                cnpj_match.group(), 
                                 f"{razao_social} (CNPJ: {cnpj})"
                             )
                     except Exception as e:
                         print(f"Error looking up CNPJ {cnpj}: {str(e)}")
                 
                 # Map transaction type
+                transaction_type = detect_transaction_type(description, value)
                 mapped_type = TYPE_MAPPING.get(transaction_type, transaction_type)
                 
-                # Insert with enriched description
+                # Insert transaction
                 cursor.execute('''
                     INSERT INTO transactions (date, description, value, type, transaction_type, document)
                     VALUES (?, ?, ?, ?, ?, ?)
@@ -393,29 +347,25 @@ def process_file_with_progress(filepath, process_id):
                     cnpj
                 ))
                 
-                processed_rows += 1
+                upload_progress[process_id]['current'] = index + 1
                 
-            except Exception as row_error:
-                print(f"Erro ao processar linha {index + 1}: {str(row_error)}")
+            except Exception as e:
+                print(f"Error processing row {index}: {str(e)}")
                 continue
-        
-        # Commit and close
+
         conn.commit()
         conn.close()
-        
-        # Update final status
-        upload_progress[process_id].update({
-            'status': 'completed',
-            'message': f'Processamento concluído! {processed_rows} transações importadas.'
-        })
-        
         os.remove(filepath)
         
+        upload_progress[process_id].update({
+            'status': 'completed',
+            'message': 'File processed successfully'
+        })
+        
     except Exception as e:
-        print(f"Erro geral no processamento: {str(e)}")
         upload_progress[process_id].update({
             'status': 'error',
-            'message': f'Erro: {str(e)}'
+            'message': f'Error: {str(e)}'
         })
 
 def detect_transaction_type(description, value):
