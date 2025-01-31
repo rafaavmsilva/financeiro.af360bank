@@ -503,11 +503,9 @@ def recebidos():
         'pagamento': 0.0,
         'cheque': 0.0,
         'contamax': 0.0,
+        'juros': 0.0,
         'despesas_operacionais': 0.0,
         'diversos': 0.0,
-        'resgate': 0.0,  # Add missing types
-        'aplicacao': 0.0,
-        'compensacao': 0.0,
         'taxa': 0.0,
         'tarifa': 0.0,
         'iof': 0.0,
@@ -642,61 +640,6 @@ def enviados():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Initialize totals with all possible types
-    transactions = []
-    totals = {
-        'pix_enviado': 0.0,
-        'ted_enviada': 0.0, 
-        'pagamento': 0.0,
-        'juros': 0.0,
-        'cartao': 0.0,
-        'cheque': 0.0,
-        'contamax': 0.0,
-        'despesas_operacionais': 0.0,
-        'diversos': 0.0
-    }
-
-    # Get filters
-    tipo_filtro = request.args.get('tipo', 'todos')
-    cnpj_filtro = request.args.get('cnpj', 'todos')
-    start_date = request.args.get('start_date', '')
-    end_date = request.args.get('end_date', '')
-
-    # Debug: Print filter values
-    print(f"Filters - tipo: {tipo_filtro}, cnpj: {cnpj_filtro}, start: {start_date}, end: {end_date}")
-
-    # Base query excluding AF companies
-    base_query = """
-        SELECT DISTINCT t.id, t.date, t.description, t.value,
-            CASE
-                WHEN t.type IN ('APLICACAO', 'RESGATE') THEN 'CONTAMAX'
-                WHEN t.type = 'COMPENSACAO' OR t.type = 'CHEQUE' THEN 'CHEQUE'
-                WHEN t.type = 'COMPRA' THEN 'CARTAO'
-                WHEN t.type IN ('TAXA', 'TARIFA', 'IOF', 'MULTA', 'DEBITO') 
-                    OR t.description LIKE '%TARIFA%'
-                    OR t.description LIKE '%TAXA%' THEN 'DESPESAS OPERACIONAIS'
-                ELSE t.type
-            END AS type,
-            t.document
-        FROM transactions t
-        WHERE t.value < 0
-    """
-    
-    params = []
-    conditions = []
-    
-    if tipo_filtro == 'CHEQUE':
-        conditions.append(" AND (t.type = 'CHEQUE' OR t.type = 'COMPENSACAO')")
-    elif tipo_filtro == 'CONTAMAX':
-        conditions.append(" AND (t.type = 'APLICACAO' OR t.type = 'RESGATE')")
-    elif tipo_filtro == 'DESPESAS OPERACIONAIS':
-        conditions.append(" AND t.type IN ('TAXA', 'TARIFA', 'IOF', 'MULTA', 'DEBITO')")
-    elif tipo_filtro != 'todos':
-        conditions.append(" AND t.type = ?")
-        params.append(tipo_filtro)
-        
-    if cnpj_filtro != 'todos':
-        conditions.append(" AND document = ?")
     # Initialize totals
     totals = {
         'pix_enviado': 0.0,
@@ -713,7 +656,13 @@ def enviados():
         'debito': 0.0
     }
 
-    # Base query for sent transactions (negative values)
+    # Get filters
+    tipo_filtro = request.args.get('tipo', 'todos')
+    cnpj_filtro = request.args.get('cnpj', 'todos')
+    start_date = request.args.get('start_date', '')
+    end_date = request.args.get('end_date', '')
+
+    # Base query
     query = '''
         SELECT t.id, t.date, t.description, ABS(t.value) as value,
                t.type AS original_type,
@@ -729,7 +678,7 @@ def enviados():
         WHERE t.value < 0
     '''
 
-    # Build query with filters
+    # Build filters
     params = []
     if tipo_filtro != 'todos':
         if tipo_filtro == 'DIVERSOS':
@@ -747,78 +696,68 @@ def enviados():
     if cnpj_filtro != 'todos':
         query += " AND t.document = ?"
         params.append(cnpj_filtro)
-        
+
     if start_date:
-        conditions.append(" AND date >= ?")
         query += " AND t.date >= ?"
         params.append(start_date)
-        
+
     if end_date:
-        conditions.append(" AND date <= ?")
+        query += " AND t.date <= ?"
         params.append(end_date)
-    
-    # Execute query
-    query = base_query + ''.join(conditions) + " ORDER BY date DESC"
-    cursor.execute(query, params)
-    rows = cursor.fetchall()
 
-    # Process results
-    query += " AND t.date <= ?"
-    params.append(end_date)
-
-    # Execute query with ordering
+    # Add ordering
     query += " ORDER BY t.date DESC"
-    cursor.execute(query, params)
-    rows = cursor.fetchall()
 
-    # Process transactions and update totals
-    transactions = []
-    for row in rows:
-        value = float(row[3])  # Using ABS(value) from query
-        original_type = row[4].lower().replace(' ', '_')
-        displayed_type = row[5].lower().replace(' ', '_')
-        
-        # Update totals
-        if original_type in totals:
-            totals[original_type] += value
-        if displayed_type in totals:
-            totals[displayed_type] += value
-            
-        transaction = {
-            'date': row[1],
-            'description': row[2],
-            'value': float(row[3]),
-            'type': row[5],
-            'original_type': row[4],
-            'document': row[6],
-            'has_company_info': False
-        }
-        
-        # Update totals
-        type_key = transaction['type'].lower().replace(' ', '_')
-        if type_key in totals:
-            totals[type_key] += abs(transaction['value'])
-        else:
-            totals['diversos'] += abs(transaction['value'])
-        transactions.append(transaction)
+    try:
+        # Execute query
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
 
-    # Get unique CNPJs for dropdown (excluding AF companies)
-    cnpjs = [
-        {'cnpj': cnpj, 'name': info.get('nome_fantasia') or info.get('razao_social', '')} 
-        for cnpj, info in cnpj_cache.items() 
-        if cnpj not in AF_COMPANIES
-    ]
+        # Process transactions
+        transactions = []
+        for row in rows:
+            value = float(row[3])
+            transaction = {
+                'date': row[1],
+                'description': row[2],
+                'value': value,
+                'type': row[5],
+                'original_type': row[4],
+                'document': row[6],
+                'has_company_info': False
+            }
 
-    conn.close()
-    return render_template('enviados.html',
-                         transactions=transactions,
-                         totals=totals,
-                         tipo_filtro=tipo_filtro,
-                         cnpj_filtro=cnpj_filtro,
-                         start_date=start_date,
-                         end_date=end_date,
-                         cnpjs=cnpjs,
-                         failed_cnpjs=len(failed_cnpjs))
+            # Update totals
+            type_key = transaction['type'].lower().replace(' ', '_')
+            if type_key in totals:
+                totals[type_key] += value
+            else:
+                totals['diversos'] += value
+
+            transactions.append(transaction)
+
+        # Get unique CNPJs for dropdown
+        cnpjs = [
+            {'cnpj': cnpj, 'name': info.get('nome_fantasia') or info.get('razao_social', '')} 
+            for cnpj, info in cnpj_cache.items() 
+            if cnpj not in AF_COMPANIES
+        ]
+
+        return render_template('enviados.html',
+                             transactions=transactions,
+                             totals=totals,
+                             tipo_filtro=tipo_filtro,
+                             cnpj_filtro=cnpj_filtro,
+                             start_date=start_date,
+                             end_date=end_date,
+                             cnpjs=cnpjs,
+                             failed_cnpjs=len(failed_cnpjs))
+
+    except Exception as e:
+        print(f"Database error: {str(e)}")
+        return render_template('error.html', error=str(e))
+    finally:
+        conn.close()
 
 @app.route('/transacoes_internas')
 @login_required
