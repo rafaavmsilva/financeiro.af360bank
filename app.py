@@ -623,6 +623,124 @@ def recebidos():
                          cnpjs=cnpjs,
                          failed_cnpjs=len(failed_cnpjs))
 
+@app.route('/enviados')
+@login_required
+def enviados():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Get filters
+    tipo_filtro = request.args.get('tipo', 'todos')
+    cnpj_filtro = request.args.get('cnpj', 'todos')
+    start_date = request.args.get('start_date', '')
+    end_date = request.args.get('end_date', '')
+
+    # Initialize totals
+    totals = {
+        'pix_enviado': 0.0,
+        'ted_enviada': 0.0,
+        'pagamento': 0.0,
+        'cheque': 0.0,
+        'contamax': 0.0,
+        'despesas_operacionais': 0.0,
+        'diversos': 0.0,
+        'taxa': 0.0,
+        'tarifa': 0.0,
+        'iof': 0.0,
+        'multa': 0.0,
+        'debito': 0.0
+    }
+
+    # Base query for sent transactions (negative values)
+    query = '''
+        SELECT t.id, t.date, t.description, ABS(t.value) as value,
+               t.type AS original_type,
+               CASE
+                   WHEN t.type IN ('APLICACAO', 'RESGATE') THEN 'CONTAMAX'
+                   WHEN t.type IN ('COMPENSACAO', 'CHEQUE') THEN 'CHEQUE'
+                   WHEN t.type IN ('TAXA', 'TARIFA', 'IOF', 'MULTA', 'DEBITO') THEN 'DESPESAS OPERACIONAIS'
+                   WHEN t.type IN ('PIX ENVIADO', 'TED ENVIADA', 'PAGAMENTO') THEN t.type
+                   ELSE 'DIVERSOS'
+               END AS displayed_type,
+               t.document
+        FROM transactions t
+        WHERE t.value < 0
+    '''
+
+    # Build query with filters
+    params = []
+    if tipo_filtro != 'todos':
+        if tipo_filtro == 'DIVERSOS':
+            query += " AND t.type NOT IN ('PIX ENVIADO', 'TED ENVIADA', 'PAGAMENTO')"
+        elif tipo_filtro == 'CHEQUE':
+            query += " AND t.type IN ('CHEQUE', 'COMPENSACAO')"
+        elif tipo_filtro == 'CONTAMAX':
+            query += " AND t.type IN ('APLICACAO', 'RESGATE')"
+        elif tipo_filtro == 'DESPESAS OPERACIONAIS':
+            query += " AND t.type IN ('TAXA', 'TARIFA', 'IOF', 'MULTA', 'DEBITO')"
+        else:
+            query += " AND t.type = ?"
+            params.append(tipo_filtro)
+
+    if cnpj_filtro != 'todos':
+        query += " AND t.document = ?"
+        params.append(cnpj_filtro)
+
+    if start_date:
+        query += " AND t.date >= ?"
+        params.append(start_date)
+
+    if end_date:
+        query += " AND t.date <= ?"
+        params.append(end_date)
+
+    # Execute query with ordering
+    query += " ORDER BY t.date DESC"
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+
+    # Process transactions and update totals
+    transactions = []
+    for row in rows:
+        value = float(row[3])  # Using ABS(value) from query
+        original_type = row[4].lower().replace(' ', '_')
+        displayed_type = row[5].lower().replace(' ', '_')
+        
+        # Update totals
+        if original_type in totals:
+            totals[original_type] += value
+        if displayed_type in totals:
+            totals[displayed_type] += value
+            
+        transaction = {
+            'date': row[1],
+            'description': row[2],
+            'value': value,
+            'type': row[5],
+            'original_type': row[4],
+            'document': row[6],
+            'has_company_info': False
+        }
+        transactions.append(transaction)
+
+    # Get unique CNPJs for dropdown (excluding AF companies)
+    cnpjs = [
+        {'cnpj': cnpj, 'name': info.get('nome_fantasia') or info.get('razao_social', '')} 
+        for cnpj, info in cnpj_cache.items() 
+        if cnpj not in AF_COMPANIES
+    ]
+
+    conn.close()
+    return render_template('enviados.html',
+                         transactions=transactions,
+                         totals=totals,
+                         tipo_filtro=tipo_filtro,
+                         cnpj_filtro=cnpj_filtro,
+                         start_date=start_date,
+                         end_date=end_date,
+                         cnpjs=cnpjs,
+                         failed_cnpjs=len(failed_cnpjs))
+
 @app.route('/transacoes_internas')
 @login_required
 def transacoes_internas():
