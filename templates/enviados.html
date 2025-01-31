@@ -20,12 +20,18 @@
                     <h5 class="card-title">Resumo</h5>
                     <div class="row">
                         {% for key, value in totals.items() %}
+                        {% if key not in ['iof', 'multa', 'tarifa'] %}
                         <div class="col-md-3 mb-2">
                             <p class="mb-0">
-                                {{ key|replace('_', ' ')|title }}: 
+                                {% if key == 'despesas_operacionais' %}
+                                    Despesas Operacionais:
+                                {% else %}
+                                    {{ key|replace('_', ' ')|title }}:
+                                {% endif %}
                                 R$ {{ "%.2f"|format(value|abs|default(0)|float)|replace('.', ',') }}
                             </p>
                         </div>
+                        {% endif %}
                         {% endfor %}
                     </div>
                 </div>
@@ -46,12 +52,10 @@
                     ('TED ENVIADA', 'info'),
                     ('PAGAMENTO', 'warning'),
                     ('JUROS', 'danger'),
-                    ('IOF', 'danger'),
-                    ('COMPRA', 'primary'),
-                    ('COMPENSACAO', 'secondary'),
-                    ('APLICACAO', 'info'),
+                    ('CARTAO', 'primary'),
                     ('CHEQUE', 'dark'),
-                    ('MULTA', 'danger'),
+                    ('CONTAMAX', 'info'),
+                    ('DESPESAS OPERACIONAIS', 'danger'),
                     ('DIVERSOS', 'secondary')
                 ] %}
                 {% for tipo, color in tipos %}
@@ -115,12 +119,10 @@
                             'TED ENVIADA': 'info',
                             'PAGAMENTO': 'warning',
                             'JUROS': 'danger',
-                            'IOF': 'danger',
-                            'COMPRA': 'primary',
-                            'COMPENSACAO': 'secondary',
-                            'APLICACAO': 'info',
+                            'CARTAO': 'primary',
                             'CHEQUE': 'dark',
-                            'MULTA': 'danger',
+                            'CONTAMAX': 'info',
+                            'DESPESAS OPERACIONAIS': 'danger',
                             'DIVERSOS': 'secondary'
                         } %}
                         <span class="badge bg-{{ badge_colors.get(transaction.type, 'secondary') }}">

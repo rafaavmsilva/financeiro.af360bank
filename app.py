@@ -514,7 +514,11 @@ def recebidos():
     start_date = request.args.get('start_date', '')
     end_date = request.args.get('end_date', '')
 
+<<<<<<< HEAD
     # Updated totals structure
+=======
+    # Initialize all possible totals
+>>>>>>> e78f486557e73252b523e2804271f41c74528fbb
     totals = {
         'pix_recebido': 0.0,
         'ted_recebida': 0.0,
@@ -522,7 +526,19 @@ def recebidos():
         'cheque': 0.0,
         'contamax': 0.0,
         'despesas_operacionais': 0.0,
+<<<<<<< HEAD
         'diversos': 0.0
+=======
+        'diversos': 0.0,
+        'resgate': 0.0,  # Add missing types
+        'aplicacao': 0.0,
+        'compensacao': 0.0,
+        'taxa': 0.0,
+        'tarifa': 0.0,
+        'iof': 0.0,
+        'multa': 0.0,
+        'debito': 0.0
+>>>>>>> e78f486557e73252b523e2804271f41c74528fbb
     }
 
     # Base query
@@ -573,6 +589,7 @@ def recebidos():
     cursor.execute(query, params)
     rows = cursor.fetchall()
 
+<<<<<<< HEAD
     # Process transactions
     transactions = []
     for row in rows:
@@ -604,6 +621,30 @@ def recebidos():
         else:
             totals['diversos'] += transaction['value']
             
+=======
+    # Process transactions and update totals
+    transactions = []
+    for row in rows:
+        value = float(row[3])
+        original_type = row[4].lower().replace(' ', '_')
+        displayed_type = row[5].lower().replace(' ', '_')
+        
+        # Update totals for both original and displayed types
+        if original_type in totals:
+            totals[original_type] += value
+        if displayed_type in totals:
+            totals[displayed_type] += value
+            
+        transaction = {
+            'date': row[1],
+            'description': row[2],
+            'value': value,
+            'type': row[5],
+            'original_type': row[4],
+            'document': row[6],
+            'has_company_info': False
+        }
+>>>>>>> e78f486557e73252b523e2804271f41c74528fbb
         transactions.append(transaction)
 
     # Get unique CNPJs for dropdown
@@ -627,9 +668,6 @@ def recebidos():
 @app.route('/enviados')
 @login_required
 def enviados():
-    if not session.get('authenticated'):
-        return redirect('https://af360bank.onrender.com/login')
-    
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -653,6 +691,7 @@ def enviados():
     start_date = request.args.get('start_date', '')
     end_date = request.args.get('end_date', '')
 
+<<<<<<< HEAD
     # Debug: Print filter values
     print(f"Filters - tipo: {tipo_filtro}, cnpj: {cnpj_filtro}, start: {start_date}, end: {end_date}")
 
@@ -688,13 +727,69 @@ def enviados():
         
     if cnpj_filtro != 'todos':
         conditions.append(" AND document = ?")
+=======
+    # Initialize totals
+    totals = {
+        'pix_enviado': 0.0,
+        'ted_enviada': 0.0,
+        'pagamento': 0.0,
+        'cheque': 0.0,
+        'contamax': 0.0,
+        'despesas_operacionais': 0.0,
+        'diversos': 0.0,
+        'taxa': 0.0,
+        'tarifa': 0.0,
+        'iof': 0.0,
+        'multa': 0.0,
+        'debito': 0.0
+    }
+
+    # Base query for sent transactions (negative values)
+    query = '''
+        SELECT t.id, t.date, t.description, ABS(t.value) as value,
+               t.type AS original_type,
+               CASE
+                   WHEN t.type IN ('APLICACAO', 'RESGATE') THEN 'CONTAMAX'
+                   WHEN t.type IN ('COMPENSACAO', 'CHEQUE') THEN 'CHEQUE'
+                   WHEN t.type IN ('TAXA', 'TARIFA', 'IOF', 'MULTA', 'DEBITO') THEN 'DESPESAS OPERACIONAIS'
+                   WHEN t.type IN ('PIX ENVIADO', 'TED ENVIADA', 'PAGAMENTO') THEN t.type
+                   ELSE 'DIVERSOS'
+               END AS displayed_type,
+               t.document
+        FROM transactions t
+        WHERE t.value < 0
+    '''
+
+    # Build query with filters
+    params = []
+    if tipo_filtro != 'todos':
+        if tipo_filtro == 'DIVERSOS':
+            query += " AND t.type NOT IN ('PIX ENVIADO', 'TED ENVIADA', 'PAGAMENTO')"
+        elif tipo_filtro == 'CHEQUE':
+            query += " AND t.type IN ('CHEQUE', 'COMPENSACAO')"
+        elif tipo_filtro == 'CONTAMAX':
+            query += " AND t.type IN ('APLICACAO', 'RESGATE')"
+        elif tipo_filtro == 'DESPESAS OPERACIONAIS':
+            query += " AND t.type IN ('TAXA', 'TARIFA', 'IOF', 'MULTA', 'DEBITO')"
+        else:
+            query += " AND t.type = ?"
+            params.append(tipo_filtro)
+
+    if cnpj_filtro != 'todos':
+        query += " AND t.document = ?"
+>>>>>>> e78f486557e73252b523e2804271f41c74528fbb
         params.append(cnpj_filtro)
         
     if start_date:
+<<<<<<< HEAD
         conditions.append(" AND date >= ?")
+=======
+        query += " AND t.date >= ?"
+>>>>>>> e78f486557e73252b523e2804271f41c74528fbb
         params.append(start_date)
         
     if end_date:
+<<<<<<< HEAD
         conditions.append(" AND date <= ?")
         params.append(end_date)
     
@@ -704,10 +799,33 @@ def enviados():
     rows = cursor.fetchall()
 
     # Process results
+=======
+        query += " AND t.date <= ?"
+        params.append(end_date)
+
+    # Execute query with ordering
+    query += " ORDER BY t.date DESC"
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+
+    # Process transactions and update totals
+    transactions = []
+>>>>>>> e78f486557e73252b523e2804271f41c74528fbb
     for row in rows:
+        value = float(row[3])  # Using ABS(value) from query
+        original_type = row[4].lower().replace(' ', '_')
+        displayed_type = row[5].lower().replace(' ', '_')
+        
+        # Update totals
+        if original_type in totals:
+            totals[original_type] += value
+        if displayed_type in totals:
+            totals[displayed_type] += value
+            
         transaction = {
             'date': row[1],
             'description': row[2],
+<<<<<<< HEAD
             'value': float(row[3]),
             'type': row[4],  # Already mapped in SQL query
             'document': row[5],
@@ -721,13 +839,17 @@ def enviados():
         else:
             totals['diversos'] += abs(transaction['value'])
             
+=======
+            'value': value,
+            'type': row[5],
+            'original_type': row[4],
+            'document': row[6],
+            'has_company_info': False
+        }
+>>>>>>> e78f486557e73252b523e2804271f41c74528fbb
         transactions.append(transaction)
 
-    # Debug: Print results
-    print(f"Processed {len(transactions)} transactions")
-    print("Totals:", totals)
-
-    # Define cnpjs from cache excluding AF companies
+    # Get unique CNPJs for dropdown (excluding AF companies)
     cnpjs = [
         {'cnpj': cnpj, 'name': info.get('nome_fantasia') or info.get('razao_social', '')} 
         for cnpj, info in cnpj_cache.items() 
