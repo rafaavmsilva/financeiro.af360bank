@@ -687,7 +687,7 @@ def enviados():
     start_date = request.args.get('start_date', '')
     end_date = request.args.get('end_date', '')
 
-    # Initialize totals with all possible types
+    # Initialize totals
     totals = {
         'juros': 0.0,
         'iof': 0.0,
@@ -701,11 +701,8 @@ def enviados():
         'diversos': 0.0
     }
 
-    # Debug: Print filter values
-    print(f"Filters - tipo: {tipo_filtro}, cnpj: {cnpj_filtro}, start: {start_date}, end: {end_date}")
-
-    # Base query excluding AF companies
-    query = """
+    # Base query with single ORDER BY
+    base_query = """
         WITH paired_transactions AS (
             SELECT DISTINCT t1.id 
             FROM transactions t1
@@ -730,44 +727,46 @@ def enviados():
         AND t.description NOT LIKE '%CANCELAMENTO%'
         AND t.description NOT LIKE '%AF%'
         AND t.id NOT IN (SELECT id FROM paired_transactions)
-        ORDER BY t.date DESC
-        """.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
-    
+    """
+
+    # Initialize params list
     params = list(AF_COMPANIES.keys())
 
+    # Add filter conditions
+    filter_conditions = []
     if tipo_filtro != 'todos':
         if tipo_filtro == 'DIVERSOS':
-            query += """ 
+            filter_conditions.append("""
                 AND (
                     type NOT IN ('PIX ENVIADO', 'TED ENVIADA', 'PAGAMENTO', 'CHEQUE', 'COMPENSACAO', 'APLICACAO')
                     OR type IS NULL
                 )
-            """
+            """)
         else:
-            query += " AND type = ?"
+            filter_conditions.append("AND type = ?")
             params.append(tipo_filtro)
 
     if cnpj_filtro != 'todos':
-        query += " AND document = ?"
+        filter_conditions.append("AND document = ?")
         params.append(cnpj_filtro)
 
     if start_date:
-        query += " AND date >= ?"
+        filter_conditions.append("AND date >= ?")
         params.append(start_date)
 
     if end_date:
-        query += " AND date <= ?"
+        filter_conditions.append("AND date <= ?")
         params.append(end_date)
 
+    # Combine query parts
+    query = base_query.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
+    query += ' '.join(filter_conditions)
     query += " ORDER BY date DESC"
-
-    # Debug: Print query and params
-    print("Query:", query)
-    print("Params:", params)
 
     cursor.execute(query, params)
     rows = cursor.fetchall()
 
+    # Process transactions
     transactions = []
     for row in rows:
         transaction = {
@@ -779,7 +778,7 @@ def enviados():
             'has_company_info': False
         }
 
-        # Update totals with the correct transaction type
+        # Update totals
         transaction_type = transaction['type'].lower().replace(' ', '_')
         if transaction_type in totals:
             totals[transaction_type] += abs(transaction['value'])
@@ -797,11 +796,7 @@ def enviados():
 
         transactions.append(transaction)
 
-    # Debug: Print results
-    print(f"Processed {len(transactions)} transactions")
-    print("Totals:", totals)
-
-    # Define cnpjs from cache excluding AF companies
+    # Get CNPJs excluding AF companies
     cnpjs = [
         {'cnpj': cnpj, 'name': info.get('nome_fantasia') or info.get('razao_social', '')} 
         for cnpj, info in cnpj_cache.items() 
