@@ -18,8 +18,9 @@ from readers.santander import SantanderReader
 from readers.itau import ItauReader
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'dev-key-123'
+app.config['SECRET_KEY'] = 'your-secret-key-here'
 app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=1)  # Set session lifetime to 1 hour
 
 # Global variables
 upload_progress = {}  # Dictionary to track file upload progress
@@ -65,21 +66,35 @@ RATE_LIMIT_WINDOW = 60  # seconds
 REQUEST_LIMIT = 60      # requests per window
 request_history = {}
 
+@app.route('/auth')
+def auth():
+    token = request.args.get('token')
+    if not token:
+        return redirect('https://af360bank.onrender.com/login')
+    
+    verification = auth_client.verify_token(token)
+    if not verification or not verification.get('valid'):
+        return redirect('https://af360bank.onrender.com/login')
+    
+    # Set session variables
+    session['token'] = token
+    session['authenticated'] = True
+    session.permanent = True  # Make the session last longer
+    
+    return redirect(url_for('index'))
+
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if not session.get('authenticated'):
-            return redirect('https://af360bank.onrender.com/login')
-            
-        # Verify token if exists
         token = session.get('token')
-        if token:
-            try:
-                serializer.loads(token, max_age=3600)
-            except:
-                session.clear()
-                return redirect('https://af360bank.onrender.com/login')
-                
+        if not token:
+            return redirect('https://af360bank.onrender.com/login')
+        
+        verification = auth_client.verify_token(token)
+        if not verification or not verification.get('valid'):
+            session.clear()
+            return redirect('https://af360bank.onrender.com/login')
+        
         return f(*args, **kwargs)
     return decorated_function
     
