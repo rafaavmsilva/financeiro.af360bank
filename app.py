@@ -55,6 +55,7 @@ auth_client = AuthClient(
 )
 auth_client.init_app(app)
 
+# Ensure the upload and instance folders exist
 for folder in ['instance', 'uploads']:
     if not os.path.exists(folder):
         os.makedirs(folder)
@@ -67,8 +68,15 @@ request_history = {}
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # Set session as authenticated for local development
-        session['authenticated'] = True
+        token = session.get('token')
+        if not token:
+            return redirect('https://af360bank.onrender.com/login')
+        
+        verification = auth_client.verify_token(token)
+        if not verification or not verification.get('valid'):
+            session.clear()
+            return redirect('https://af360bank.onrender.com/login')
+        
         return f(*args, **kwargs)
     return decorated_function
     
@@ -134,68 +142,27 @@ init_db()
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'xls', 'xlsx'}
 
-def get_company_info(cnpj, enrich_description=True):
-    """
-    Fetch company information using cache if available and optionally enrich description
-    
-    Args:
-        cnpj: CNPJ number to lookup
-        enrich_description: Whether to return enriched description format
-    """
-    # Handle 15-digit CNPJ
-    api_cnpj = cnpj
-    if len(cnpj) == 15 and cnpj.startswith('0'):
-        api_cnpj = cnpj[1:]
-
-    # Check cache first
+def get_company_info(cnpj):
+    """Fetch company information using cache if available"""
+    # Check if already in cache
     if cnpj in cnpj_cache:
-        company_info = cnpj_cache[cnpj]
-        if enrich_description:
-            return format_company_info(company_info, cnpj)
-        return company_info
-
-    # Skip if previously failed
-    if cnpj in failed_cnpjs:
-        return None
-
+        return cnpj_cache[cnpj]
+    
     try:
-        # Configure retry strategy
-        retry_strategy = Retry(
-            total=3,
-            backoff_factor=0.5,
-            status_forcelist=[429, 500, 502, 503, 504],
-        )
-        adapter = HTTPAdapter(max_retries=retry_strategy)
-        session = requests.Session()
-        session.mount("https://", adapter)
-
-        # Make API request
-        response = session.get(
-            f'https://brasilapi.com.br/api/cnpj/v1/{api_cnpj}',
-            timeout=5
-        )
-        
+        response = requests.get(f'https://brasilapi.com.br/api/cnpj/v1/{cnpj}')
         if response.status_code == 200:
             company_info = response.json()
+            # Store in cache
             cnpj_cache[cnpj] = company_info
-            
-            # Remove from failed if successful
             if cnpj in failed_cnpjs:
                 failed_cnpjs.remove(cnpj)
-            
-            if enrich_description:
-                return format_company_info(company_info, cnpj)
             return company_info
-            
         else:
             failed_cnpjs.add(cnpj)
-            print(f"Failed to fetch CNPJ {cnpj}: Status {response.status_code}")
-            return None
-            
     except Exception as e:
-        print(f"Error fetching CNPJ {cnpj}: {str(e)}")
+        print(f"Error fetching company information: {e}")
         failed_cnpjs.add(cnpj)
-        return None
+    return None
 
 def format_company_info(company_info, cnpj):
     """Format company info for display"""
@@ -225,41 +192,57 @@ def index():
 @rate_limit()
 def upload_file():
     try:
+        if not session.get('authenticated'):
+            return redirect('https://af360bank.onrender.com/login')
+        
         if 'file' not in request.files:
-            return jsonify({'error': 'No file provided'}), 400
+            return jsonify({'success': False, 'message': 'Nenhum arquivo selecionado'})
         
         file = request.files['file']
+        bank_type = request.form.get('bank_type')
+        
         if file.filename == '':
-            return jsonify({'error': 'No file selected'}), 400
+            return jsonify({'success': False, 'message': 'Nenhum arquivo selecionado'})
+        
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(filepath)
             
-        if not allowed_file(file.filename):
-            return jsonify({'error': 'Invalid file type'}), 400
-
-        filename = secure_filename(file.filename)
-        process_id = str(uuid.uuid4())
+            # Initialize progress
+            process_id = str(uuid.uuid4())
+            upload_progress[process_id] = {
+                'status': 'processing',
+                'current': 0,
+                'total': 0,
+                'message': 'Iniciando processamento...'
+            }
+            
+            # Select reader based on bank type
+            if bank_type == 'santander':
+                reader = SantanderReader()
+            elif bank_type == 'itau':
+                reader = ItauReader()
+            else:
+                return jsonify({'success': False, 'message': 'Banco não suportado'})
+            
+            # Process file in separate thread
+            thread = threading.Thread(
+                target=reader.process_file, 
+                args=(filepath, process_id, upload_progress)
+            )
+            thread.start()
+            
+            return jsonify({
+                'success': True,
+                'process_id': process_id,
+                'message': 'Arquivo enviado e sendo processado'
+            })
         
-        # Initialize progress tracker
-        upload_progress[process_id] = {
-            'status': 'processing',
-            'progress': 0,
-            'total': 0,
-            'message': 'Iniciando processamento...'
-        }
-        
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(filepath)
-        
-        # Start processing in background
-        thread = threading.Thread(target=process_file_with_progress, args=(filepath, process_id))
-        thread.start()
-        
-        return jsonify({
-            'message': 'Upload iniciado',
-            'process_id': process_id
-        }), 202
+        return jsonify({'success': False, 'message': 'Tipo de arquivo não permitido'})
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'success': False, 'message': f'Erro ao processar arquivo: {str(e)}'})
 
 def find_matching_column(df, column_names):
     for col in df.columns:
@@ -363,7 +346,7 @@ def process_file_with_progress(filepath, process_id):
                 transaction_type = detect_transaction_type(description, value)
                 
                 # Extract and lookup CNPJ
-                cnpj = extract_cnpj(description)
+                cnpj = cnpj(description)
                 if cnpj and cnpj not in AF_COMPANIES:
                     try:
                         company_info = get_company_info(cnpj)
@@ -443,25 +426,6 @@ def detect_transaction_type(description, value):
             
     return 'DIVERSOS' if value > 0 else 'DEBITO'
 
-def extract_cnpj(description):
-    import re
-    cnpj_patterns = [
-        r'CNPJ[:\s]*(\d{14,15})',
-        r'CNPJ[:\s]*(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})',
-        r'\b(\d{14,15})\b',
-        r'\b(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})\b'
-    ]
-    
-    for pattern in cnpj_patterns:
-        match = re.search(pattern, description)
-        if match:
-            cnpj = ''.join(filter(str.isdigit, match.group(1)))
-            if len(cnpj) == 15 and cnpj.startswith('0'):
-                return cnpj[1:]
-            elif len(cnpj) == 14:
-                return cnpj
-    return None
-
 @app.route('/upload_progress/<process_id>')
 @login_required
 def get_upload_progress(process_id):
@@ -514,11 +478,7 @@ def recebidos():
     start_date = request.args.get('start_date', '')
     end_date = request.args.get('end_date', '')
 
-<<<<<<< HEAD
-    # Updated totals structure
-=======
     # Initialize all possible totals
->>>>>>> e78f486557e73252b523e2804271f41c74528fbb
     totals = {
         'pix_recebido': 0.0,
         'ted_recebida': 0.0,
@@ -526,9 +486,6 @@ def recebidos():
         'cheque': 0.0,
         'contamax': 0.0,
         'despesas_operacionais': 0.0,
-<<<<<<< HEAD
-        'diversos': 0.0
-=======
         'diversos': 0.0,
         'resgate': 0.0,  # Add missing types
         'aplicacao': 0.0,
@@ -538,7 +495,6 @@ def recebidos():
         'iof': 0.0,
         'multa': 0.0,
         'debito': 0.0
->>>>>>> e78f486557e73252b523e2804271f41c74528fbb
     }
 
     # Base query
@@ -589,7 +545,6 @@ def recebidos():
     cursor.execute(query, params)
     rows = cursor.fetchall()
 
-<<<<<<< HEAD
     # Process transactions
     transactions = []
     for row in rows:
@@ -621,7 +576,6 @@ def recebidos():
         else:
             totals['diversos'] += transaction['value']
             
-=======
     # Process transactions and update totals
     transactions = []
     for row in rows:
@@ -644,7 +598,6 @@ def recebidos():
             'document': row[6],
             'has_company_info': False
         }
->>>>>>> e78f486557e73252b523e2804271f41c74528fbb
         transactions.append(transaction)
 
     # Get unique CNPJs for dropdown
@@ -691,7 +644,6 @@ def enviados():
     start_date = request.args.get('start_date', '')
     end_date = request.args.get('end_date', '')
 
-<<<<<<< HEAD
     # Debug: Print filter values
     print(f"Filters - tipo: {tipo_filtro}, cnpj: {cnpj_filtro}, start: {start_date}, end: {end_date}")
 
@@ -727,7 +679,6 @@ def enviados():
         
     if cnpj_filtro != 'todos':
         conditions.append(" AND document = ?")
-=======
     # Initialize totals
     totals = {
         'pix_enviado': 0.0,
@@ -777,19 +728,14 @@ def enviados():
 
     if cnpj_filtro != 'todos':
         query += " AND t.document = ?"
->>>>>>> e78f486557e73252b523e2804271f41c74528fbb
         params.append(cnpj_filtro)
         
     if start_date:
-<<<<<<< HEAD
         conditions.append(" AND date >= ?")
-=======
         query += " AND t.date >= ?"
->>>>>>> e78f486557e73252b523e2804271f41c74528fbb
         params.append(start_date)
         
     if end_date:
-<<<<<<< HEAD
         conditions.append(" AND date <= ?")
         params.append(end_date)
     
@@ -799,9 +745,8 @@ def enviados():
     rows = cursor.fetchall()
 
     # Process results
-=======
-        query += " AND t.date <= ?"
-        params.append(end_date)
+    query += " AND t.date <= ?"
+    params.append(end_date)
 
     # Execute query with ordering
     query += " ORDER BY t.date DESC"
@@ -810,7 +755,6 @@ def enviados():
 
     # Process transactions and update totals
     transactions = []
->>>>>>> e78f486557e73252b523e2804271f41c74528fbb
     for row in rows:
         value = float(row[3])  # Using ABS(value) from query
         original_type = row[4].lower().replace(' ', '_')
@@ -825,10 +769,10 @@ def enviados():
         transaction = {
             'date': row[1],
             'description': row[2],
-<<<<<<< HEAD
             'value': float(row[3]),
-            'type': row[4],  # Already mapped in SQL query
-            'document': row[5],
+            'type': row[5],
+            'original_type': row[4],
+            'document': row[6],
             'has_company_info': False
         }
         
@@ -838,15 +782,6 @@ def enviados():
             totals[type_key] += abs(transaction['value'])
         else:
             totals['diversos'] += abs(transaction['value'])
-            
-=======
-            'value': value,
-            'type': row[5],
-            'original_type': row[4],
-            'document': row[6],
-            'has_company_info': False
-        }
->>>>>>> e78f486557e73252b523e2804271f41c74528fbb
         transactions.append(transaction)
 
     # Get unique CNPJs for dropdown (excluding AF companies)
