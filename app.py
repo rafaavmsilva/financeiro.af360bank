@@ -443,6 +443,51 @@ def process_file_with_progress(filepath, process_id):
             'message': f'Erro: {str(e)}'
         })
 
+def detect_transaction_type(description, value):
+    description_upper = description.upper()
+    
+    # Primary types
+    if 'PIX' in description_upper:
+        return 'PIX RECEBIDO' if value > 0 else 'PIX ENVIADO'
+    elif 'TED' in description_upper:
+        return 'TED RECEBIDA' if value > 0 else 'TED ENVIADA'
+        
+    # Secondary types
+    for tipo, keywords in {
+        'TARIFA': ['TARIFA', 'TAR'],
+        'IOF': ['IOF'],
+        'RESGATE': ['RESGATE'],
+        'APLICACAO': ['APLICACAO', 'APLICAÇÃO'],
+        'COMPRA': ['COMPRA'],
+        'COMPENSACAO': ['COMPENSACAO', 'COMPENSAÇÃO'],
+        'CHEQUE': ['CHEQUE'],
+        'JUROS': ['JUROS'],
+        'MULTA': ['MULTA']
+    }.items():
+        if any(keyword in description_upper for keyword in keywords):
+            return tipo
+            
+    return 'DIVERSOS' if value > 0 else 'DEBITO'
+
+def extract_cnpj(description):
+    import re
+    cnpj_patterns = [
+        r'CNPJ[:\s]*(\d{14,15})',
+        r'CNPJ[:\s]*(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})',
+        r'\b(\d{14,15})\b',
+        r'\b(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})\b'
+    ]
+    
+    for pattern in cnpj_patterns:
+        match = re.search(pattern, description)
+        if match:
+            cnpj = ''.join(filter(str.isdigit, match.group(1)))
+            if len(cnpj) == 15 and cnpj.startswith('0'):
+                return cnpj[1:]
+            elif len(cnpj) == 14:
+                return cnpj
+    return None
+
 @app.route('/upload_progress/<process_id>')
 @login_required
 def get_upload_progress(process_id):
