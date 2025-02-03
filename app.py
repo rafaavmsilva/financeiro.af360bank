@@ -291,6 +291,62 @@ def extract_transaction_info(description, value):
     
     return transaction_info
 
+def process_date(date_val):
+    """Process date values from Excel"""
+    if pd.isna(date_val):
+        return None
+        
+    try:
+        if isinstance(date_val, str):
+            try:
+                return datetime.strptime(date_val, '%d/%m/%Y').date()
+            except ValueError:
+                try:
+                    return datetime.strptime(date_val, '%Y-%m-%d').date()
+                except ValueError:
+                    return None
+        elif isinstance(date_val, datetime):
+            return date_val.date()
+        else:
+            return pd.to_datetime(date_val).date()
+    except:
+        return None
+
+def process_value(value):
+    """Process monetary values from Excel"""
+    if pd.isna(value):
+        return None
+        
+    try:
+        if isinstance(value, (int, float)):
+            return float(value)
+        else:
+            value_str = str(value).replace('R$', '').strip()
+            return float(value_str.replace('.', '').replace(',', '.'))
+    except:
+        return None
+
+def extract_cnpj(description):
+    """Extract CNPJ from description"""
+    import re
+    
+    cnpj_patterns = [
+        r'CNPJ[:\s]*(\d{14,15})',
+        r'CNPJ[:\s]*(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})',
+        r'\b(\d{14,15})\b',
+        r'\b(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})\b'
+    ]
+    
+    for pattern in cnpj_patterns:
+        match = re.search(pattern, description)
+        if match:
+            cnpj = ''.join(filter(str.isdigit, match.group(1)))
+            if len(cnpj) == 15 and cnpj.startswith('0'):
+                return cnpj[1:]
+            elif len(cnpj) == 14:
+                return cnpj
+    return None
+
 def process_file_with_progress(filepath, process_id):
     try:
         print(f"Iniciando processamento do arquivo: {filepath}")

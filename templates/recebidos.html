@@ -32,7 +32,6 @@
                         <div class="col-md-3 mb-2">
                             <p class="mb-0">
                                 Total {{ label }}: R$ {{ "%.2f"|format(totals.get(key, 0.0)|float)|replace('.', ',') }}
-                            </p>
                         {% endfor %}
                     </div>
                 </div>
