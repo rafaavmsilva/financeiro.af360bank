@@ -1334,17 +1334,18 @@ def extract_and_enrich_cnpj(description, transaction_type):
                 
                 if razao_social:
                     # Handle different transaction types
-                    if 'PIX' in description or 'TED' in description:
-                        # Extract transaction type (PIX RECEBIDO or TED RECEBIDA)
-                        type_match = re.match(r'(PIX RECEBIDO|TED RECEBIDA)', description)
-                        if type_match:
-                            transaction_type = type_match.group(1)
-                            return f"{transaction_type} {razao_social} (CNPJ: {cnpj})"
+                    if 'PIX RECEBIDO' in description or 'TED RECEBIDA' in description:
+                        prefix = 'PIX RECEBIDO' if 'PIX RECEBIDO' in description else 'TED RECEBIDA'
+                        return f"{prefix} {razao_social} (CNPJ: {cnpj})"
+                    elif 'PAGAMENTO' in description:
+                        # Extract base prefix without CNPJ
+                        prefix = re.sub(r'\s*CNPJ\s*\d+.*$', '', description)
+                        prefix = re.sub(r'\s+0\s+', ' ', prefix)  # Remove standalone '0'
+                        return f"{prefix} {razao_social} (CNPJ: {cnpj})"
                     
                     # For other transaction types
                     parts = description.split(cnpj, 1)
                     prefix = parts[0].strip()
-                    # Remove any trailing CNPJ text
                     prefix = re.sub(r'\s*CNPJ\s*$', '', prefix)
                     return f"{prefix} {razao_social} (CNPJ: {cnpj})"
                     
