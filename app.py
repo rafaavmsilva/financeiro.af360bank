@@ -524,7 +524,6 @@ def create_companies_table():
 def cleanup_paired_transactions(conn):
     """Clean up paired transactions during upload"""
     cursor = conn.cursor()
-    total_deleted = 0
     
     try:
         # First handle CONTAMAX transactions
@@ -534,12 +533,10 @@ def cleanup_paired_transactions(conn):
             FROM transactions t1
             JOIN transactions t2 ON t1.date = t2.date 
             AND ABS(t1.value) = ABS(t2.value)
-            AND t1.id < t2.id
-            WHERE (
+            WHERE 
                 (t1.description LIKE '%RESGATE CONTAMAX%' AND t2.description LIKE '%CANCELAMENTO RESGATE%')
-                OR (t2.description LIKE '%RESGATE CONTAMAX%' AND t1.description LIKE '%CANCELAMENTO RESGATE%')
-            )
-            AND t1.value = -t2.value
+                AND t1.value = -t2.value
+                AND t1.id < t2.id
         )
         DELETE FROM transactions
         WHERE id IN (SELECT id1 FROM contamax_pairs)
@@ -548,25 +545,30 @@ def cleanup_paired_transactions(conn):
         
         contamax_deleted = cursor.rowcount
         
-        # Then handle CHEQUE transactions
+        # Handle CHEQUE transactions with ROW_NUMBER to match pairs properly
         cursor.execute('''
         WITH cheque_pairs AS (
-            SELECT DISTINCT t1.id as id1, t2.id as id2
+            SELECT t1.id as id1, t2.id as id2,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY t1.value, t1.date 
+                       ORDER BY t1.id
+                   ) as rn
             FROM transactions t1
-            JOIN transactions t2 ON t1.date = t2.date 
+            JOIN transactions t2 
+            ON t1.date = t2.date 
             AND ABS(t1.value) = ABS(t2.value)
-            AND t1.id < t2.id
-            WHERE (
-                (
-                    (t1.description LIKE '%CHEQUE EMITIDO/DEBITADO%' OR t1.description LIKE '%COMPENSACAO INTERNA%')
-                    AND t2.description LIKE '%CHEQUE DEVOLVIDO%'
-                    AND t1.value < 0 AND t2.value > 0
-                )
-            )
+            AND t1.id != t2.id
+            WHERE 
+                ((t1.description LIKE '%CHEQUE EMITIDO/DEBITADO%' OR t1.description LIKE '%COMPENSACAO INTERNA%')
+                AND t2.description LIKE '%CHEQUE DEVOLVIDO%'
+                AND t1.value < 0 AND t2.value > 0)
         )
         DELETE FROM transactions
-        WHERE id IN (SELECT id1 FROM cheque_pairs)
-        OR id IN (SELECT id2 FROM cheque_pairs)
+        WHERE id IN (
+            SELECT id1 FROM cheque_pairs WHERE rn = 1
+            UNION
+            SELECT id2 FROM cheque_pairs WHERE rn = 1
+        )
         ''')
         
         cheque_deleted = cursor.rowcount
