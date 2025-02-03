@@ -401,18 +401,12 @@ def process_file_with_progress(filepath, process_id):
         
         processed_rows = 0
         for index, row in df.iterrows():
-            upload_progress[process_id].update({
-                'current': index + 1,
-                'message': f'Processando linha {index + 1} de {total_rows}'
-            })
-            
             try:
-                # Process date
+                # Process date and basic info
                 date = process_date(row[data_col])
                 if date is None:
                     continue
                 
-                # Process description and value
                 description = str(row[desc_col]).strip()
                 if not description:
                     continue
@@ -421,13 +415,15 @@ def process_file_with_progress(filepath, process_id):
                 if value is None:
                     continue
                 
-                # Detect transaction type and enrich description
+                # First detect transaction type
                 transaction_type = detect_transaction_type(description, value)
-                enriched_description = description
-                cnpj = extract_cnpj(description)
                 
-                if cnpj and 'PAGAMENTO' in description.upper():
-                    transaction_type = 'PAGAMENTO'
+                # Extract CNPJ for any transaction type containing a CNPJ number
+                cnpj = extract_cnpj(description)
+                enriched_description = description
+                
+                # Enrich description if CNPJ is found, regardless of transaction type
+                if cnpj:
                     enriched_description = extract_and_enrich_cnpj(description, transaction_type)
                 
                 # Insert transaction
