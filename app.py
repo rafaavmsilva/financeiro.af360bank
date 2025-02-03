@@ -371,9 +371,6 @@ def process_file_with_progress(filepath, process_id):
         df = pd.read_excel(filepath, skiprows=header_row)
         df.columns = [str(col).strip() for col in df.columns]
         
-        print(f"Arquivo lido com sucesso. Total de linhas: {len(df)}")
-        print(f"Colunas encontradas: {df.columns.tolist()}")
-        
         # Initialize progress
         total_rows = len(df)
         upload_progress[process_id] = {
@@ -383,7 +380,7 @@ def process_file_with_progress(filepath, process_id):
             'message': 'Lendo arquivo...'
         }
         
-        # Find and validate columns
+        # Find required columns
         data_col = find_matching_column(df, ['Data'])
         desc_col = find_matching_column(df, ['Histórico'])
         valor_col = find_matching_column(df, ['Valor (R$)', 'Valor'])
@@ -391,29 +388,51 @@ def process_file_with_progress(filepath, process_id):
         if not all([data_col, desc_col, valor_col]):
             raise Exception(f"Colunas necessárias não encontradas. Colunas disponíveis: {df.columns.tolist()}")
         
-        # Filter rows
-        df = df[pd.notna(df[data_col])]
-        df = df[~df[data_col].astype(str).str.contains('0715')]
-        
-        # Database connection
         conn = get_db_connection()
         cursor = conn.cursor()
         
         processed_rows = 0
         for index, row in df.iterrows():
             try:
-                # ...existing transaction processing...
+                # Process date
+                date = process_date(row[data_col])
+                if date is None:
+                    continue
+                    
+                # Process description and value
+                description = str(row[desc_col]).strip()
+                value = process_value(row[valor_col])
+                
+                if not description or value is None:
+                    continue
+                
+                # Detect transaction type and get CNPJ info
+                transaction_type = detect_transaction_type(description, value)
+                enriched_description = extract_and_enrich_cnpj(description, transaction_type)
+                cnpj = extract_cnpj(description)
+                
+                # Insert transaction
+                cursor.execute('''
+                    INSERT INTO transactions (date, description, value, type, transaction_type, document)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (
+                    date.strftime('%Y-%m-%d'),
+                    enriched_description,
+                    value,
+                    transaction_type,
+                    'receita' if value > 0 else 'despesa',
+                    cnpj
+                ))
                 
                 processed_rows += 1
+                upload_progress[process_id]['current'] = index + 1
                 
             except Exception as e:
                 print(f"Error processing row {index}: {str(e)}")
                 continue
         
-        # Cleanup paired transactions automatically
+        # Cleanup paired transactions
         deleted_count = cleanup_paired_transactions(conn)
-        if deleted_count > 0:
-            print(f"Cleaned up {deleted_count} paired transactions")
         
         conn.commit()
         conn.close()
@@ -525,8 +544,8 @@ def cleanup_paired_transactions(conn):
         OR id IN (SELECT id2 FROM paired_transactions)
         ''')
 
-        conn.commit()
-        return cursor.rowcount
+        deleted_count = cursor.rowcount
+        return deleted_count
         
     except Exception as e:
         print(f"Error cleaning up transactions: {str(e)}")
