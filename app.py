@@ -528,98 +528,70 @@ def cleanup_paired_transactions(conn):
     
     try:
         print("\n=== Starting CONTAMAX Cleanup ===")
-        # Handle CONTAMAX transactions with improved matching
         cursor.execute('''
         WITH contamax_pairs AS (
-            SELECT t1.id as id1, t1.description as desc1, t1.value as val1, t1.date as date1,
-                   t2.id as id2, t2.description as desc2, t2.value as val2, t2.date as date2,
-                   ROW_NUMBER() OVER (PARTITION BY t1.date, ABS(t1.value) ORDER BY t1.id) as rn
+            SELECT DISTINCT t1.id as id1, t1.description as desc1, t1.value as val1, t1.date as date1,
+                   t2.id as id2, t2.description as desc2, t2.value as val2, t2.date as date2
             FROM transactions t1
             JOIN transactions t2 ON t1.date = t2.date 
-            AND ABS(t1.value) = ABS(t2.value)
-            AND t1.id != t2.id
+            AND t1.value = -t2.value
+            AND t1.id < t2.id
             WHERE 
-                ((t1.description LIKE '%RESGATE CONTAMAX%' AND t2.description LIKE '%CANCELAMENTO RESGATE%')
-                OR (t2.description LIKE '%RESGATE CONTAMAX%' AND t1.description LIKE '%CANCELAMENTO RESGATE%'))
-                AND t1.value = -t2.value
+                (t1.description LIKE '%RESGATE CONTAMAX%' AND t2.description LIKE '%CANCELAMENTO RESGATE%')
+                OR (t2.description LIKE '%RESGATE CONTAMAX%' AND t1.description LIKE '%CANCELAMENTO RESGATE%')
         )
-        SELECT * FROM contamax_pairs WHERE rn = 1''')
+        DELETE FROM transactions
+        WHERE id IN (SELECT id1 FROM contamax_pairs)
+        OR id IN (SELECT id2 FROM contamax_pairs)
+        ''')
         
-        contamax_pairs = cursor.fetchall()
-        print(f"Found {len(contamax_pairs)} CONTAMAX pairs to delete:")
-        for pair in contamax_pairs:
-            print(f"Pair to delete:\n  1. {pair[1]} (R$ {pair[2]:.2f}) on {pair[3]}\n  2. {pair[5]} (R$ {pair[6]:.2f}) on {pair[7]}")
-        
-        if contamax_pairs:
-            cursor.execute('''
-            WITH contamax_pairs AS (
-                SELECT t1.id as id1, t2.id as id2,
-                       ROW_NUMBER() OVER (PARTITION BY t1.date, ABS(t1.value) ORDER BY t1.id) as rn
-                FROM transactions t1
-                JOIN transactions t2 ON t1.date = t2.date 
-                AND ABS(t1.value) = ABS(t2.value)
-                AND t1.id != t2.id
-                WHERE 
-                    ((t1.description LIKE '%RESGATE CONTAMAX%' AND t2.description LIKE '%CANCELAMENTO RESGATE%')
-                    OR (t2.description LIKE '%RESGATE CONTAMAX%' AND t1.description LIKE '%CANCELAMENTO RESGATE%'))
-                    AND t1.value = -t2.value
-            )
-            DELETE FROM transactions
-            WHERE id IN (
-                SELECT id1 FROM contamax_pairs WHERE rn = 1
-                UNION
-                SELECT id2 FROM contamax_pairs WHERE rn = 1
-            )''')
-            contamax_deleted = cursor.rowcount
-            total_deleted += contamax_deleted
-            print(f"Deleted {contamax_deleted} CONTAMAX transactions")
+        contamax_deleted = cursor.rowcount
+        total_deleted += contamax_deleted
+        print(f"Deleted {contamax_deleted} CONTAMAX transactions")
         
         print("\n=== Starting CHEQUE Cleanup ===")
-        # Handle CHEQUE transactions with improved matching
         cursor.execute('''
-        WITH cheque_pairs AS (
-            SELECT t1.id as id1, t1.description as desc1, t1.value as val1, t1.date as date1,
+        WITH RECURSIVE cheque_pairs AS (
+            SELECT DISTINCT t1.id as id1, t1.description as desc1, t1.value as val1, t1.date as date1,
                    t2.id as id2, t2.description as desc2, t2.value as val2, t2.date as date2,
-                   ROW_NUMBER() OVER (PARTITION BY t1.date, ABS(t1.value) ORDER BY t1.id) as rn
+                   1 as pair_num
             FROM transactions t1
             JOIN transactions t2 ON t1.date = t2.date 
-            AND ABS(t1.value) = ABS(t2.value)
-            AND t1.id != t2.id
+            AND t1.value = -t2.value
+            AND t1.id < t2.id
             WHERE 
-                ((t1.description LIKE '%CHEQUE EMITIDO/DEBITADO%' OR t1.description LIKE '%COMPENSACAO INTERNA%')
+                (t1.description LIKE '%CHEQUE EMITIDO/DEBITADO%' OR t1.description LIKE '%COMPENSACAO INTERNA%')
                 AND t2.description LIKE '%CHEQUE DEVOLVIDO%'
-                AND t1.value < 0 AND t2.value > 0)
+                AND t1.value < 0
+            
+            UNION ALL
+            
+            SELECT DISTINCT t1.id, t1.description, t1.value, t1.date,
+                   t2.id, t2.description, t2.value, t2.date,
+                   cp.pair_num + 1
+            FROM transactions t1
+            JOIN transactions t2 ON t1.date = t2.date 
+            AND t1.value = -t2.value
+            AND t1.id < t2.id
+            JOIN cheque_pairs cp ON t1.value = cp.val1
+            AND t1.date = cp.date1
+            AND t1.id > cp.id1
+            WHERE 
+                (t1.description LIKE '%CHEQUE EMITIDO/DEBITADO%' OR t1.description LIKE '%COMPENSACAO INTERNA%')
+                AND t2.description LIKE '%CHEQUE DEVOLVIDO%'
+                AND t1.value < 0
         )
-        SELECT * FROM cheque_pairs WHERE rn = 1''')
+        DELETE FROM transactions
+        WHERE id IN (
+            SELECT id1 FROM cheque_pairs
+            UNION
+            SELECT id2 FROM cheque_pairs
+        )
+        ''')
         
-        cheque_pairs = cursor.fetchall()
-        print(f"Found {len(cheque_pairs)} CHEQUE pairs to delete:")
-        for pair in cheque_pairs:
-            print(f"Pair to delete:\n  1. {pair[1]} (R$ {pair[2]:.2f}) on {pair[3]}\n  2. {pair[5]} (R$ {pair[6]:.2f}) on {pair[7]}")
-        
-        if cheque_pairs:
-            cursor.execute('''
-            WITH cheque_pairs AS (
-                SELECT t1.id as id1, t2.id as id2,
-                       ROW_NUMBER() OVER (PARTITION BY t1.date, ABS(t1.value) ORDER BY t1.id) as rn
-                FROM transactions t1
-                JOIN transactions t2 ON t1.date = t2.date 
-                AND ABS(t1.value) = ABS(t2.value)
-                AND t1.id != t2.id
-                WHERE 
-                    ((t1.description LIKE '%CHEQUE EMITIDO/DEBITADO%' OR t1.description LIKE '%COMPENSACAO INTERNA%')
-                    AND t2.description LIKE '%CHEQUE DEVOLVIDO%'
-                    AND t1.value < 0 AND t2.value > 0)
-            )
-            DELETE FROM transactions
-            WHERE id IN (
-                SELECT id1 FROM cheque_pairs WHERE rn = 1
-                UNION
-                SELECT id2 FROM cheque_pairs WHERE rn = 1
-            )''')
-            cheque_deleted = cursor.rowcount
-            total_deleted += cheque_deleted
-            print(f"Deleted {cheque_deleted} CHEQUE transactions")
+        cheque_deleted = cursor.rowcount
+        total_deleted += cheque_deleted
+        print(f"Deleted {cheque_deleted} CHEQUE transactions")
         
         conn.commit()
         return total_deleted
