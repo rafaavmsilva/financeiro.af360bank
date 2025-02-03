@@ -295,24 +295,33 @@ def process_file_with_progress(filepath, process_id):
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Initialize upload progress
         df = pd.read_excel(filepath, header=None)
         total_rows = len(df)
+        
+        # Initialize progress
         upload_progress[process_id].update({
             'total': total_rows,
             'message': 'Processing file...'
         })
 
-        # Process each row
+        # Find column indices
+        data_col = 0  # Default column for date
+        desc_col = 1  # Default column for description
+        valor_col = 2  # Default column for value
+
         for index, row in df.iterrows():
             try:
-                # Initialize variables
-                cnpj = None
-                date = pd.to_datetime(date_str, format='%d/%m/%Y').date()
+                # Convert date safely
+                try:
+                    date = pd.to_datetime(row[data_col], format='%d/%m/%Y').date()
+                except:
+                    date = pd.to_datetime(row[data_col], dayfirst=True).date()
+                
                 description = str(row[desc_col]).strip()
                 value = float(str(row[valor_col]).replace('R$', '').strip().replace('.', '').replace(',', '.'))
                 
                 # Extract CNPJ if present
+                cnpj = None
                 cnpj_match = re.search(r'(?:\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}|\d{14})', description)
                 if cnpj_match:
                     cnpj = ''.join(filter(str.isdigit, cnpj_match.group()))
