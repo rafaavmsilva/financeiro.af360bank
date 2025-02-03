@@ -23,15 +23,16 @@
                             ('ted_recebida', 'TED Recebida'),
                             ('pagamento', 'Pagamentos'),
                             ('cheque', 'Cheque'),
-                            ('resgate', 'Resgate'),
-                            ('juros', 'Juros'),
-                            ('iof', 'IOF'),
-                            ('diversos', 'Diversos')
+                            ('contamax', 'Contamax'),
+                            ('despesas_operacionais', 'Despesas'),
+                            ('diversos', 'Diversos'),
+                            ('juros', 'Juros')
                         ] %}
                         {% for key, label in summary_items %}
                         <div class="col-md-3 mb-2">
-                            <p class="mb-0">Total {{ label }}: R$ {{ "%.2f"|format(totals[key]|float)|replace('.', ',') }}</p>
-                        </div>
+                            <p class="mb-0">
+                                Total {{ label }}: R$ {{ "%.2f"|format(totals.get(key, 0.0)|float)|replace('.', ',') }}
+                            </p>
                         {% endfor %}
                     </div>
                 </div>
