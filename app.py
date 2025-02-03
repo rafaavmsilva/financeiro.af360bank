@@ -526,23 +526,37 @@ def cleanup_paired_transactions(conn):
     cursor = conn.cursor()
     
     try:
-        # Find and delete paired transactions with matching amounts
+        # Process CHEQUE and CONTAMAX transactions separately
         cursor.execute('''
         WITH paired_transactions AS (
+            -- First find CHEQUE pairs
             SELECT DISTINCT t1.id as id1, t2.id as id2
             FROM transactions t1
             JOIN transactions t2 ON ABS(t1.value) = ABS(t2.value)
             AND t1.date = t2.date
             WHERE (
-                -- Match CHEQUE transactions
-                (t1.description LIKE '%CHEQUE EMITIDO/DEBITADO%' AND t2.description LIKE '%CHEQUE DEVOLVIDO%')
-                OR (t1.description LIKE '%COMPENSACAO INTERNA DE CHEQUE%' AND t2.description LIKE '%CHEQUE DEVOLVIDO%')
-                -- Match CONTAMAX transactions
-                OR (t1.description LIKE '%RESGATE CONTAMAX%' AND t2.description LIKE '%CANCELAMENTO RESGATE CONTAMAX%')
+                -- Match any negative CHEQUE with positive return
+                (
+                    (t1.description LIKE '%CHEQUE EMITIDO/DEBITADO%' OR t1.description LIKE '%COMPENSACAO INTERNA DE CHEQUE%')
+                    AND t2.description LIKE '%CHEQUE DEVOLVIDO%'
+                    AND t1.value < 0 AND t2.value > 0
+                )
+            )
+            AND t1.id < t2.id
+            
+            UNION
+            
+            -- Then find CONTAMAX pairs
+            SELECT DISTINCT t1.id as id1, t2.id as id2
+            FROM transactions t1
+            JOIN transactions t2 ON ABS(t1.value) = ABS(t2.value)
+            AND t1.date = t2.date
+            WHERE (
+                (t1.description LIKE '%RESGATE CONTAMAX%' AND t2.description LIKE '%CANCELAMENTO RESGATE CONTAMAX%')
                 OR (t2.description LIKE '%RESGATE CONTAMAX%' AND t1.description LIKE '%CANCELAMENTO RESGATE CONTAMAX%')
             )
-            AND t1.value = -t2.value  -- Ensure opposite values
-            AND t1.id < t2.id         -- Avoid duplicate pairs
+            AND t1.value = -t2.value
+            AND t1.id < t2.id
         )
         DELETE FROM transactions
         WHERE id IN (SELECT id1 FROM paired_transactions)
