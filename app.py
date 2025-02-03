@@ -603,7 +603,7 @@ def enviados():
         'tarifa': 0.0,
         'iof': 0.0,
         'multa': 0.0,
-        'debito': 0.0
+        'debito': 0.1
     }
 
     # Get filters
