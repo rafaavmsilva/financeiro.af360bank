@@ -351,37 +351,30 @@ def process_file_with_progress(filepath, process_id):
     try:
         print(f"Iniciando processamento do arquivo: {filepath}")
         
-        # First read without header to find correct structure
+        # First read without header
         df_init = pd.read_excel(filepath, header=None)
         header_row = None
-        data_start = None
         
-        # Find header row and data start position
+        # Find header row
         for idx, row in df_init.iterrows():
             row_values = [str(x).strip() for x in row if pd.notna(x)]
-            
-            # Skip empty rows
             if not row_values:
                 continue
-                
-            # Check if this is the header row (contains 'Data' and 'Histórico')
             if 'Data' in row_values and 'Histórico' in row_values:
                 header_row = idx
-                data_start = idx + 1
                 break
         
         if header_row is None:
             raise Exception("Header 'Data' não encontrado")
         
-        # Re-read file with correct header and data
+        # Re-read with header
         df = pd.read_excel(filepath, skiprows=header_row)
-        
-        # Clean up column names
         df.columns = [str(col).strip() for col in df.columns]
         
         print(f"Arquivo lido com sucesso. Total de linhas: {len(df)}")
         print(f"Colunas encontradas: {df.columns.tolist()}")
         
+        # Initialize progress
         total_rows = len(df)
         upload_progress[process_id] = {
             'total': total_rows,
@@ -390,7 +383,7 @@ def process_file_with_progress(filepath, process_id):
             'message': 'Lendo arquivo...'
         }
         
-        # Find required columns
+        # Find and validate columns
         data_col = find_matching_column(df, ['Data'])
         desc_col = find_matching_column(df, ['Histórico'])
         valor_col = find_matching_column(df, ['Valor (R$)', 'Valor'])
@@ -402,6 +395,7 @@ def process_file_with_progress(filepath, process_id):
         df = df[pd.notna(df[data_col])]
         df = df[~df[data_col].astype(str).str.contains('0715')]
         
+        # Database connection
         conn = get_db_connection()
         cursor = conn.cursor()
         
@@ -427,11 +421,14 @@ def process_file_with_progress(filepath, process_id):
                 if value is None:
                     continue
                 
-                # Detect transaction type
+                # Detect transaction type and enrich description
                 transaction_type = detect_transaction_type(description, value)
-                
-                # Process CNPJ
+                enriched_description = description
                 cnpj = extract_cnpj(description)
+                
+                if cnpj and 'PAGAMENTO' in description.upper():
+                    transaction_type = 'PAGAMENTO'
+                    enriched_description = extract_and_enrich_cnpj(description, transaction_type)
                 
                 # Insert transaction
                 cursor.execute('''
@@ -439,7 +436,7 @@ def process_file_with_progress(filepath, process_id):
                     VALUES (?, ?, ?, ?, ?, ?)
                 ''', (
                     date.strftime('%Y-%m-%d'),
-                    description,
+                    enriched_description,
                     value,
                     transaction_type,
                     'receita' if value > 0 else 'despesa',
@@ -452,9 +449,9 @@ def process_file_with_progress(filepath, process_id):
                 print(f"Error processing row {index}: {str(e)}")
                 continue
         
+        # Cleanup
         conn.commit()
         conn.close()
-        
         os.remove(filepath)
         
         upload_progress[process_id].update({
@@ -470,9 +467,14 @@ def process_file_with_progress(filepath, process_id):
         })
 
 def detect_transaction_type(description, value):
+    """Detect transaction type from description and value"""
     description_upper = description.upper()
     
-    # Primary types
+    # Check for PAGAMENTO first
+    if 'PAGAMENTO' in description_upper:
+        return 'PAGAMENTO'
+        
+    # Check PIX and TED
     if 'PIX' in description_upper:
         return 'PIX RECEBIDO' if value > 0 else 'PIX ENVIADO'
     elif 'TED' in description_upper:
@@ -1200,58 +1202,51 @@ def cnpj_verification_page():
     return render_template('cnpj_verification.html', active_page='cnpj_verification')
 
 def extract_and_enrich_cnpj(description, transaction_type):
-    # Find sequence of 14 digits that could be a CNPJ
+    """Extract and enrich CNPJ information in description"""
     import re
-    
-    # Only process PIX RECEBIDO, TED RECEBIDA, and PAGAMENTO
-    if transaction_type not in ['PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO']:
-        return description
     
     # Try different CNPJ patterns
     cnpj_patterns = [
-        r'CNPJ[:\s]*(\d{14,15})',  # CNPJ followed by 14 or 15 digits
-        r'CNPJ[:\s]*(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})',  # CNPJ followed by formatted number
-        r'\b(\d{14,15})\b',  # Just 14 or 15 digits
-        r'\b(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})\b'  # Formatted CNPJ
+        r'CNPJ[:\s]*(\d{14,15})',
+        r'CNPJ[:\s]*(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})',
+        r'\b(\d{14,15})\b',
+        r'\b(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})\b'
     ]
     
-    cnpj_match = None
     for pattern in cnpj_patterns:
         match = re.search(pattern, description)
         if match:
-            cnpj_match = match
-            break
-    
-    if not cnpj_match:
-        return description
-        
-    # Extract CNPJ and handle 15-digit case
-    cnpj = ''.join(filter(str.isdigit, cnpj_match.group(1)))
-    if len(cnpj) == 15 and cnpj.startswith('0'):
-        cnpj = cnpj[1:]  # Remove first zero only if 15 digits
-    elif len(cnpj) != 14:
-        return description  # Invalid CNPJ length
-    
-    try:
-        if cnpj in cnpj_cache:
-            data = cnpj_cache[cnpj]
-            razao_social = data.get('razao_social', '')
-            new_description = description.replace(cnpj_match.group(0), f"{razao_social} (CNPJ: {cnpj})")
-            return new_description
-            
-        response = requests.get(f'https://brasilapi.com.br/api/cnpj/v1/{cnpj}', timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            cnpj_cache[cnpj] = data
-            razao_social = data.get('razao_social', '')
-            new_description = description.replace(cnpj_match.group(0), f"{razao_social} (CNPJ: {cnpj})")
-            return new_description
-        else:
-            failed_cnpjs.add(cnpj)
-    except Exception as e:
-        print(f"Erro ao buscar CNPJ {cnpj}: {e}")
-        failed_cnpjs.add(cnpj)
-    
+            cnpj = ''.join(filter(str.isdigit, match.group(1)))
+            if len(cnpj) == 15 and cnpj.startswith('0'):
+                cnpj = cnpj[1:]
+            elif len(cnpj) != 14:
+                continue
+                
+            # Try to get company info
+            try:
+                if cnpj in cnpj_cache:
+                    company_info = cnpj_cache[cnpj]
+                else:
+                    response = requests.get(f'https://brasilapi.com.br/api/cnpj/v1/{cnpj}', timeout=5)
+                    if response.status_code == 200:
+                        company_info = response.json()
+                        cnpj_cache[cnpj] = company_info
+                    else:
+                        failed_cnpjs.add(cnpj)
+                        continue
+                        
+                # Replace CNPJ with company name
+                razao_social = company_info.get('razao_social', '')
+                if razao_social:
+                    description = description.replace(
+                        match.group(0),
+                        f"{razao_social} (CNPJ: {cnpj})"
+                    )
+                    
+            except Exception as e:
+                print(f"Error looking up CNPJ {cnpj}: {str(e)}")
+                failed_cnpjs.add(cnpj)
+                
     return description
 
 if __name__ == '__main__':
