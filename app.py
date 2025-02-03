@@ -526,18 +526,23 @@ def cleanup_paired_transactions(conn):
     cursor = conn.cursor()
     
     try:
-        # Find and delete paired transactions
+        # Find and delete paired transactions with matching amounts
         cursor.execute('''
         WITH paired_transactions AS (
-            SELECT t1.id as id1, t2.id as id2
+            SELECT DISTINCT t1.id as id1, t2.id as id2
             FROM transactions t1
             JOIN transactions t2 ON ABS(t1.value) = ABS(t2.value)
-            WHERE t1.id < t2.id
-            AND (
-                t2.description LIKE '%CHEQUE DEVOLVIDO%'
-                OR t2.description LIKE '%CANCELAMENTO RESGATE%'
+            AND t1.date = t2.date
+            WHERE (
+                -- Match CHEQUE transactions
+                (t1.description LIKE '%CHEQUE EMITIDO/DEBITADO%' AND t2.description LIKE '%CHEQUE DEVOLVIDO%')
+                OR (t1.description LIKE '%COMPENSACAO INTERNA DE CHEQUE%' AND t2.description LIKE '%CHEQUE DEVOLVIDO%')
+                -- Match CONTAMAX transactions
+                OR (t1.description LIKE '%RESGATE CONTAMAX%' AND t2.description LIKE '%CANCELAMENTO RESGATE CONTAMAX%')
+                OR (t2.description LIKE '%RESGATE CONTAMAX%' AND t1.description LIKE '%CANCELAMENTO RESGATE CONTAMAX%')
             )
-            AND t1.value = -t2.value
+            AND t1.value = -t2.value  -- Ensure opposite values
+            AND t1.id < t2.id         -- Avoid duplicate pairs
         )
         DELETE FROM transactions
         WHERE id IN (SELECT id1 FROM paired_transactions)
@@ -551,22 +556,6 @@ def cleanup_paired_transactions(conn):
         print(f"Error cleaning up transactions: {str(e)}")
         return 0
 
-@app.route('/cleanup-transactions', methods=['POST'])
-@login_required
-def cleanup_transactions():
-    try:
-        deleted_count = cleanup_paired_transactions()
-        return jsonify({
-            'success': True,
-            'message': f'Successfully cleaned up {deleted_count} paired transactions',
-            'deleted_count': deleted_count
-        })
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'Error cleaning up transactions: {str(e)}'
-        }), 500
-    
 @app.route('/recebidos')
 @login_required
 def recebidos():
