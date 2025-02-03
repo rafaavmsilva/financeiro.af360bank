@@ -16,6 +16,7 @@ import threading
 from auth_client import AuthClient
 from readers.santander import SantanderReader
 from readers.itau import ItauReader
+import re
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here'
@@ -303,6 +304,25 @@ def process_file_with_progress(filepath, process_id):
             'total': total_rows,
             'message': 'Processing file...'
         })
+
+        # Fixed totals initialization
+        totals = {
+            'pix_recebido': 0.0,
+            'ted_recebida': 0.0,
+            'pagamento': 0.0,
+            'cheque': 0.0,
+            'contamax': 0.0,
+            'despesas_operacionais': 0.0,
+            'diversos': 0.0,
+            'taxa': 0.0,
+            'tarifa': 0.0,
+            'iof': 0.0,
+            'multa': 0.0,
+            'debito': 0.0,
+            'aplicacao': 0.0,
+            'resgate': 0.0,
+            'juros': 0.0
+        }
 
         # Find column indices
         data_col = 0  # Default column for date
