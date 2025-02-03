@@ -526,41 +526,40 @@ def cleanup_paired_transactions(conn):
     cursor = conn.cursor()
     
     try:
-        # Process CHEQUE and CONTAMAX transactions separately
         cursor.execute('''
-        WITH paired_transactions AS (
-            -- First find CHEQUE pairs
-            SELECT DISTINCT t1.id as id1, t2.id as id2
+        WITH numbered_pairs AS (
+            SELECT t1.id as id1,
+                   t2.id as id2,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY t1.value, t1.date
+                       ORDER BY t1.id, t2.id
+                   ) as pair_num
             FROM transactions t1
-            JOIN transactions t2 ON ABS(t1.value) = ABS(t2.value)
-            AND t1.date = t2.date
-            WHERE (
-                -- Match any negative CHEQUE with positive return
+            JOIN transactions t2 
+            ON t1.date = t2.date 
+            AND ABS(t1.value) = ABS(t2.value)
+            AND t1.id < t2.id
+            WHERE 
+                -- Match CHEQUE pairs
                 (
-                    (t1.description LIKE '%CHEQUE EMITIDO/DEBITADO%' OR t1.description LIKE '%COMPENSACAO INTERNA DE CHEQUE%')
+                    (t1.description LIKE '%CHEQUE EMITIDO/DEBITADO%' OR t1.description LIKE '%COMPENSACAO INTERNA%')
                     AND t2.description LIKE '%CHEQUE DEVOLVIDO%'
                     AND t1.value < 0 AND t2.value > 0
                 )
-            )
-            AND t1.id < t2.id
-            
-            UNION
-            
-            -- Then find CONTAMAX pairs
-            SELECT DISTINCT t1.id as id1, t2.id as id2
-            FROM transactions t1
-            JOIN transactions t2 ON ABS(t1.value) = ABS(t2.value)
-            AND t1.date = t2.date
-            WHERE (
-                (t1.description LIKE '%RESGATE CONTAMAX%' AND t2.description LIKE '%CANCELAMENTO RESGATE CONTAMAX%')
-                OR (t2.description LIKE '%RESGATE CONTAMAX%' AND t1.description LIKE '%CANCELAMENTO RESGATE CONTAMAX%')
-            )
-            AND t1.value = -t2.value
-            AND t1.id < t2.id
+                OR 
+                -- Match CONTAMAX pairs
+                (
+                    t1.description LIKE '%RESGATE CONTAMAX%' 
+                    AND t2.description LIKE '%CANCELAMENTO RESGATE%'
+                    AND t1.value = -t2.value
+                )
         )
         DELETE FROM transactions
-        WHERE id IN (SELECT id1 FROM paired_transactions)
-        OR id IN (SELECT id2 FROM paired_transactions)
+        WHERE id IN (
+            SELECT id1 FROM numbered_pairs
+            UNION
+            SELECT id2 FROM numbered_pairs
+        )
         ''')
 
         deleted_count = cursor.rowcount
