@@ -296,52 +296,40 @@ def process_file_with_progress(filepath, process_id):
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Read Excel without header first
+        # Read Excel looking for header row
         df = pd.read_excel(filepath, header=None)
         
-        # Find actual data start
-        data_start_row = 0
+        # Find the header row by looking for specific keywords
+        header_row = None
         for idx, row in df.iterrows():
-            if pd.notna(row[0]) and isinstance(row[0], str):
-                if 'AGENCIA' in row[0].upper() or 'DATA' in row[0].upper():
-                    data_start_row = idx + 1
-                    break
-        
-        # Read file again with proper header row
-        df = pd.read_excel(filepath, skiprows=data_start_row)
+            if any(str(cell).upper() in ['DATA', 'DESCRIÇÃO', 'VALOR'] for cell in row):
+                header_row = idx
+                break
+                
+        if header_row is None:
+            raise ValueError("Could not find header row in file")
+            
+        # Read data with proper header
+        df = pd.read_excel(filepath, skiprows=header_row+1)
         total_rows = len(df)
         
         upload_progress[process_id].update({
             'total': total_rows,
             'message': 'Processing file...'
         })
-
-        # Fixed totals with all possible types
-        totals = {
-            'pix_recebido': 0.0,
-            'ted_recebida': 0.0,
-            'pagamento': 0.0,
-            'cheque': 0.0,
-            'contamax': 0.0,
-            'diversos': 0.0,
-            'despesas_operacionais': 0.0,
-            'taxa': 0.0,
-            'tarifa': 0.0,
-            'iof': 0.0,
-            'multa': 0.0,
-            'debito': 0.0,
-            'juros': 0.0
-        }
-
+        
         # Process each row
         for index, row in df.iterrows():
             try:
-                # Safe date parsing
-                date_str = str(row.iloc[0])
-                try:
-                    date = pd.to_datetime(date_str, format='%d/%m/%Y').date()
-                except:
-                    date = pd.to_datetime(date_str, dayfirst=True).date()
+                # Parse date
+                date_val = row.iloc[0]
+                if isinstance(date_val, str):
+                    try:
+                        date = pd.to_datetime(date_val, format='%d/%m/%Y').date()
+                    except:
+                        date = pd.to_datetime(date_val, dayfirst=True).date()
+                else:
+                    date = pd.to_datetime(date_val).date()
                 
                 description = str(row.iloc[1]).strip()
                 value = float(str(row.iloc[2]).replace('R$', '').strip().replace('.', '').replace(',', '.'))
@@ -367,7 +355,7 @@ def process_file_with_progress(filepath, process_id):
             except Exception as e:
                 print(f"Error processing row {index}: {str(e)}")
                 continue
-
+                
         conn.commit()
         conn.close()
         os.remove(filepath)
@@ -382,6 +370,7 @@ def process_file_with_progress(filepath, process_id):
             'status': 'error',
             'message': f'Error: {str(e)}'
         })
+        
 def detect_transaction_type(description, value):
     description_upper = description.upper()
     
