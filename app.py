@@ -53,7 +53,7 @@ for folder in ['instance', 'uploads']:
 RATE_LIMIT_WINDOW = 60  # seconds
 REQUEST_LIMIT = 60      # requests per window
 request_history = {}
-a
+
 @app.route('/auth')
 def auth():
     token = request.args.get('token')
@@ -560,9 +560,8 @@ def recebidos():
     start_date = request.args.get('start_date', '')
     end_date = request.args.get('end_date', '')
 
+    # Initialize all possible total keys
     totals = {
-        'juros': 0.0,
-        'iof': 0.0,
         'pix_recebido': 0.0,
         'ted_recebida': 0.0,
         'pagamento': 0.0,
@@ -570,24 +569,34 @@ def recebidos():
         'compensacao': 0.0,
         'resgate': 0.0,
         'aplicacao': 0.0,
+        'juros': 0.0,
+        'iof': 0.0,
         'multa': 0.0,
         'diversos': 0.0
     }
 
+    # Base query
     query = '''
-        SELECT t.id, t.date, t.description, t.value,
-               t.type AS original_type,
-               CASE
-                   WHEN t.type IN ('PIX RECEBIDO','TED RECEBIDA','PAGAMENTO') THEN t.type
-                   WHEN t.value > 0 THEN 'DIVERSOS'
-                   ELSE t.type
-               END AS displayed_type,
-               t.document
+        SELECT 
+            t.id, 
+            strftime('%d/%m/%Y', t.date) as formatted_date,
+            t.description, 
+            t.value,
+            t.type AS original_type,
+            CASE
+                WHEN t.type IN ('PIX RECEBIDO','TED RECEBIDA','PAGAMENTO') THEN t.type
+                WHEN t.value > 0 THEN 'DIVERSOS'
+                ELSE t.type
+            END AS displayed_type,
+            t.document
         FROM transactions t
         WHERE t.value > 0
-    '''.format(af_companies=','.join(['?' for _ in AF_COMPANIES]))
+    '''
 
+    # Build params list
     params = []
+    
+    # Add filters
     if tipo_filtro != 'todos':
         if tipo_filtro == 'DIVERSOS':
             query += " AND t.type NOT IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO')"
@@ -608,14 +617,17 @@ def recebidos():
         params.append(end_date)
 
     query += " ORDER BY date DESC"
+    
+    # Execute query
     cursor.execute(query, params)
     rows = cursor.fetchall()
 
+    # Process transactions
     transactions = []
     for row in rows:
         transaction = {
             'id': row[0],
-            'date': row[1],
+            'date': row[1],  # Using formatted date
             'description': row[2],
             'value': float(row[3]),
             'original_type': row[4],
@@ -624,25 +636,20 @@ def recebidos():
             'has_company_info': False
         }
         
-        # Simplify type
+        # Normalize type for display
         if transaction['original_type'] == 'COMPENSACAO':
             transaction['type'] = 'CHEQUE'
         elif transaction['original_type'] in ['APLICACAO', 'RESGATE']:
-            transaction['type'] = 'CONTAMAX'
+            transaction['type'] = transaction['original_type']
 
-        # Update totals
+        # Update totals based on transaction type
         type_key = transaction['original_type'].lower().replace(' ', '_')
         if type_key in totals:
-            totals[type_key] += transaction['value']
-        
-        # If not primary type, add to diversos
-        if transaction['original_type'] in ['PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO']:
-            type_key = transaction['original_type'].lower().replace(' ', '_')
             totals[type_key] += transaction['value']
         else:
             totals['diversos'] += transaction['value']
 
-        # Format description
+        # Add company info if available
         if transaction['document']:
             company_info = get_company_info(transaction['document'])
             if company_info:
@@ -654,7 +661,7 @@ def recebidos():
 
         transactions.append(transaction)
 
-    # Define cnpjs from cache excluding AF companies
+    # Get CNPJs for filter dropdown (excluding AF companies)
     cnpjs = [
         {'cnpj': cnpj, 'name': info.get('nome_fantasia') or info.get('razao_social', '')} 
         for cnpj, info in cnpj_cache.items() 
