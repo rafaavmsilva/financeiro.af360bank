@@ -1330,13 +1330,14 @@ def extract_and_enrich_cnpj(description, transaction_type):
                         failed_cnpjs.add(cnpj)
                         return description
                 
-                # Get transaction type prefix
-                prefix = description.split(cnpj)[0].strip()
+                # Extract prefix before CNPJ
+                parts = re.split(r'CNPJ[:\s]*\d{14,15}', description, 1)
+                prefix = parts[0].strip()
                 razao_social = company_info.get('razao_social', '')
                 
                 if razao_social:
-                    # Format: "PIX RECEBIDO COMPANY_NAME (CNPJ: NUMBER)"
-                    return f"{prefix.strip()} {razao_social} (CNPJ: {cnpj})"
+                    # Clean and format description
+                    return f"{prefix} {razao_social} (CNPJ: {cnpj})"
                     
             except Exception as e:
                 print(f"Error looking up CNPJ {cnpj}: {str(e)}")
