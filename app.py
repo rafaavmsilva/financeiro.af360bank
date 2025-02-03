@@ -533,6 +533,74 @@ def create_companies_table():
     conn.commit()
     conn.close()
 
+def cleanup_paired_transactions():
+    """Clean up paired transactions that cancel each other"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Find and delete paired CHEQUE transactions
+        cursor.execute('''
+        WITH paired_cheques AS (
+            SELECT t1.id as id1, t2.id as id2
+            FROM transactions t1
+            JOIN transactions t2 ON ABS(t1.value) = ABS(t2.value)
+            WHERE t1.id < t2.id
+            AND (
+                (t1.description LIKE '%CHEQUE EMITIDO/DEBITADO%' AND t2.description LIKE '%CHEQUE DEVOLVIDO%')
+                OR (t1.description LIKE '%COMPENSACAO INTERNA DE CHEQUE%' AND t2.description LIKE '%CHEQUE DEVOLVIDO%')
+            )
+            AND t1.value = -t2.value
+        )
+        DELETE FROM transactions
+        WHERE id IN (SELECT id1 FROM paired_cheques)
+        OR id IN (SELECT id2 FROM paired_cheques)
+        ''')
+
+        # Find and delete paired CONTAMAX transactions
+        cursor.execute('''
+        WITH paired_contamax AS (
+            SELECT t1.id as id1, t2.id as id2
+            FROM transactions t1
+            JOIN transactions t2 ON ABS(t1.value) = ABS(t2.value)
+            WHERE t1.id < t2.id
+            AND (
+                (t1.description LIKE '%RESGATE CONTAMAX%' AND t2.description LIKE '%CANCELAMENTO RESGATE CONTAMAX%')
+                OR (t1.description LIKE '%APLICACAO CONTAMAX%' AND t2.description LIKE '%RESGATE CONTAMAX%')
+            )
+            AND t1.value = -t2.value
+        )
+        DELETE FROM transactions
+        WHERE id IN (SELECT id1 FROM paired_contamax)
+        OR id IN (SELECT id2 FROM paired_contamax)
+        ''')
+
+        conn.commit()
+        deleted_count = cursor.rowcount
+        return deleted_count
+        
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
+
+@app.route('/cleanup-transactions', methods=['POST'])
+@login_required
+def cleanup_transactions():
+    try:
+        deleted_count = cleanup_paired_transactions()
+        return jsonify({
+            'success': True,
+            'message': f'Successfully cleaned up {deleted_count} paired transactions',
+            'deleted_count': deleted_count
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error cleaning up transactions: {str(e)}'
+        }), 500
+    
 @app.route('/recebidos')
 @login_required
 def recebidos():
