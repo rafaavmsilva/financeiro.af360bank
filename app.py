@@ -934,20 +934,33 @@ def dashboard():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Calculate totals
+    # Exclude internal transactions and calculate totals
     cursor.execute('''
+        WITH filtered_transactions AS (
+            SELECT *
+            FROM transactions t
+            WHERE NOT EXISTS (
+                SELECT 1 
+                FROM (
+                    SELECT value, document
+                    FROM transactions 
+                    WHERE document IN (''' + ','.join(['?' for _ in AF_COMPANIES]) + ''')
+                ) af
+                WHERE t.document = af.document
+            )
+        )
         SELECT 
-            (SELECT COALESCE(SUM(value), 0) FROM transactions WHERE value > 0) as total_received,
-            (SELECT COALESCE(SUM(ABS(value)), 0) FROM transactions WHERE value < 0) as total_sent,
-            (SELECT COALESCE(SUM(ABS(value)), 0) FROM transactions WHERE type = 'JUROS') as juros,
-            (SELECT COALESCE(SUM(ABS(value)), 0) FROM transactions WHERE type = 'IOF') as iof,
-            (SELECT COALESCE(SUM(ABS(value)), 0) FROM transactions WHERE type IN ('TARIFA', 'TAR', 'TAXA')) as tarifa,
-            (SELECT COALESCE(SUM(ABS(value)), 0) FROM transactions WHERE type = 'MULTA') as multa,
-            (SELECT COALESCE(SUM(value), 0) FROM transactions WHERE type = 'PIX RECEBIDO') as pix_recebido,
-            (SELECT COALESCE(SUM(value), 0) FROM transactions WHERE type = 'TED RECEBIDA') as ted_recebida,
-            (SELECT COALESCE(SUM(ABS(value)), 0) FROM transactions WHERE type = 'PIX ENVIADO') as pix_enviado,
-            (SELECT COALESCE(SUM(ABS(value)), 0) FROM transactions WHERE type = 'TED ENVIADA') as ted_enviada
-    ''')
+            (SELECT COALESCE(SUM(value), 0) FROM filtered_transactions WHERE value > 0) as total_received,
+            (SELECT COALESCE(SUM(ABS(value)), 0) FROM filtered_transactions WHERE value < 0) as total_sent,
+            (SELECT COALESCE(SUM(ABS(value)), 0) FROM filtered_transactions WHERE type = 'JUROS') as juros,
+            (SELECT COALESCE(SUM(ABS(value)), 0) FROM filtered_transactions WHERE type = 'IOF') as iof,
+            (SELECT COALESCE(SUM(ABS(value)), 0) FROM filtered_transactions WHERE type IN ('TARIFA', 'TAR', 'TAXA')) as tarifa,
+            (SELECT COALESCE(SUM(ABS(value)), 0) FROM filtered_transactions WHERE type = 'MULTA') as multa,
+            (SELECT COALESCE(SUM(value), 0) FROM filtered_transactions WHERE type = 'PIX RECEBIDO') as pix_recebido,
+            (SELECT COALESCE(SUM(value), 0) FROM filtered_transactions WHERE type = 'TED RECEBIDA') as ted_recebida,
+            (SELECT COALESCE(SUM(ABS(value)), 0) FROM filtered_transactions WHERE type = 'PIX ENVIADO') as pix_enviado,
+            (SELECT COALESCE(SUM(ABS(value)), 0) FROM filtered_transactions WHERE type = 'TED ENVIADA') as ted_enviada
+        ''', list(AF_COMPANIES.keys()))
     
     row = cursor.fetchone()
     totals = {
@@ -957,72 +970,85 @@ def dashboard():
         'iof': float(row[3] or 0),
         'tarifa': float(row[4] or 0),
         'multa': float(row[5] or 0),
-        'pix_recebido': float(row[4] or 0),
-        'ted_recebida': float(row[5] or 0),
-        'pix_enviado': float(row[6] or 0),
-        'ted_enviada': float(row[7] or 0)
+        'pix_recebido': float(row[6] or 0),
+        'ted_recebida': float(row[7] or 0),
+        'pix_enviado': float(row[8] or 0),
+        'ted_enviada': float(row[9] or 0)
     }
 
-    # Get monthly data for cash flow
+    # Get monthly data excluding internal transactions
     cursor.execute('''
         SELECT 
             strftime('%m/%Y', date) as month,
             COALESCE(SUM(CASE WHEN value > 0 THEN value ELSE 0 END), 0) as received,
             COALESCE(SUM(CASE WHEN value < 0 THEN ABS(value) ELSE 0 END), 0) as sent
         FROM transactions
+        WHERE document NOT IN (''' + ','.join(['?' for _ in AF_COMPANIES]) + ''')
         GROUP BY month
         ORDER BY date ASC
         LIMIT 6
-    ''')
+    ''', list(AF_COMPANIES.keys()))
     
     months = []
     received = []
     sent = []
     for row in cursor.fetchall():
         months.append(row[0])
-        received.append(float(row[1] or 0))
-        sent.append(float(row[2] or 0))
+        received.append(float(row[1]))
+        sent.append(float(row[2]))
 
-    # Get expenses distribution
+    # Get expenses distribution excluding internal transactions
     cursor.execute('''
         SELECT 
-            type,
+            CASE
+                WHEN type IN ('TAXA', 'TARIFA', 'IOF', 'MULTA', 'DEBITO') THEN 'DESPESAS OPERACIONAIS'
+                WHEN type IN ('APLICACAO', 'RESGATE') THEN 'CONTAMAX'
+                WHEN type IN ('COMPENSACAO', 'CHEQUE') THEN 'CHEQUE'
+                ELSE type
+            END as type,
             COALESCE(SUM(ABS(value)), 0) as total
         FROM transactions
-        WHERE value < 0
-        GROUP BY type
+        WHERE value < 0 
+        AND document NOT IN (''' + ','.join(['?' for _ in AF_COMPANIES]) + ''')
+        GROUP BY 
+            CASE
+                WHEN type IN ('TAXA', 'TARIFA', 'IOF', 'MULTA', 'DEBITO') THEN 'DESPESAS OPERACIONAIS'
+                WHEN type IN ('APLICACAO', 'RESGATE') THEN 'CONTAMAX'
+                WHEN type IN ('COMPENSACAO', 'CHEQUE') THEN 'CHEQUE'
+                ELSE type
+            END
         ORDER BY total DESC
-    ''')
+    ''', list(AF_COMPANIES.keys()))
     
     expense_types = []
     expense_values = []
     for row in cursor.fetchall():
         expense_types.append(row[0])
-        expense_values.append(float(row[1] or 0))
+        expense_values.append(float(row[1]))
 
-    # Get top CNPJs with names
+    # Get top CNPJs excluding AF companies
     cursor.execute('''
         SELECT 
             document,
             COALESCE(SUM(ABS(value)), 0) as total
         FROM transactions
         WHERE document IS NOT NULL
+        AND document NOT IN (''' + ','.join(['?' for _ in AF_COMPANIES]) + ''')
         GROUP BY document
         ORDER BY total DESC
         LIMIT 5
-    ''')
+    ''', list(AF_COMPANIES.keys()))
     
     top_cnpjs = []
     for row in cursor.fetchall():
-        if row[0]:
-            company_info = get_company_info(row[0])
-            if company_info:
-                name = company_info.get('nome_fantasia') or company_info.get('razao_social', '')
-                if name:
-                    top_cnpjs.append({
-                        'name': name,
-                        'value': float(row[1] or 0)
-                    })
+        cnpj = row[0]
+        if cnpj in cnpj_cache:
+            company_info = cnpj_cache[cnpj]
+            name = company_info.get('nome_fantasia') or company_info.get('razao_social', cnpj)
+            top_cnpjs.append({
+                'name': name,
+                'value': float(row[1])
+            })
 
     conn.close()
 
