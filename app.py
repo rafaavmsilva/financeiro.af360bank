@@ -1205,7 +1205,10 @@ def extract_and_enrich_cnpj(description, transaction_type):
     """Extract and enrich CNPJ information in description"""
     import re
     
-    # Try different CNPJ patterns
+    # Check if description is already enriched
+    if '(CNPJ:' in description:
+        return description
+        
     cnpj_patterns = [
         r'CNPJ[:\s]*(\d{14,15})',
         r'CNPJ[:\s]*(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})',
@@ -1222,7 +1225,6 @@ def extract_and_enrich_cnpj(description, transaction_type):
             elif len(cnpj) != 14:
                 continue
                 
-            # Try to get company info
             try:
                 if cnpj in cnpj_cache:
                     company_info = cnpj_cache[cnpj]
@@ -1233,15 +1235,14 @@ def extract_and_enrich_cnpj(description, transaction_type):
                         cnpj_cache[cnpj] = company_info
                     else:
                         failed_cnpjs.add(cnpj)
-                        continue
-                        
-                # Replace CNPJ with company name
+                        return description
+                
+                # Extract original text before CNPJ
+                base_text = description.split('CNPJ')[0].strip()
                 razao_social = company_info.get('razao_social', '')
+                
                 if razao_social:
-                    description = description.replace(
-                        match.group(0),
-                        f"{razao_social} (CNPJ: {cnpj})"
-                    )
+                    return f"{base_text} {razao_social} (CNPJ: {cnpj})"
                     
             except Exception as e:
                 print(f"Error looking up CNPJ {cnpj}: {str(e)}")
