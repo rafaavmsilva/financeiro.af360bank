@@ -53,7 +53,7 @@ for folder in ['instance', 'uploads']:
 RATE_LIMIT_WINDOW = 60  # seconds
 REQUEST_LIMIT = 60      # requests per window
 request_history = {}
-
+a
 @app.route('/auth')
 def auth():
     token = request.args.get('token')
