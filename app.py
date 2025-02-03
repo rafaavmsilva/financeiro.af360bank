@@ -296,7 +296,13 @@ def process_file_with_progress(filepath, process_id):
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        df = pd.read_excel(filepath, header=None)
+        # Read Excel with header
+        df = pd.read_excel(filepath)
+        
+        # Skip header rows if they exist
+        if 'AGENCIA' in str(df.iloc[0,0]) or 'Data' in str(df.iloc[2,0]):
+            df = df.iloc[3:].reset_index(drop=True)
+            
         total_rows = len(df)
         
         # Initialize progress
@@ -319,49 +325,28 @@ def process_file_with_progress(filepath, process_id):
             'iof': 0.0,
             'multa': 0.0,
             'debito': 0.0,
-            'aplicacao': 0.0,
-            'resgate': 0.0,
             'juros': 0.0
         }
 
-        # Find column indices
-        data_col = 0  # Default column for date
-        desc_col = 1  # Default column for description
-        valor_col = 2  # Default column for value
+        # Find column indices based on headers or use defaults
+        data_col = df.columns[0]  # First column
+        desc_col = df.columns[1]  # Second column
+        valor_col = df.columns[2]  # Third column
 
         for index, row in df.iterrows():
             try:
-                # Convert date safely
+                # Safe date parsing
+                date_str = str(row[data_col])
                 try:
-                    date = pd.to_datetime(row[data_col], format='%d/%m/%Y').date()
+                    date = pd.to_datetime(date_str, format='%d/%m/%Y').date()
                 except:
-                    date = pd.to_datetime(row[data_col], dayfirst=True).date()
+                    date = pd.to_datetime(date_str, dayfirst=True).date()
                 
                 description = str(row[desc_col]).strip()
                 value = float(str(row[valor_col]).replace('R$', '').strip().replace('.', '').replace(',', '.'))
                 
-                # Extract CNPJ if present
-                cnpj = None
-                cnpj_match = re.search(r'(?:\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}|\d{14})', description)
-                if cnpj_match:
-                    cnpj = ''.join(filter(str.isdigit, cnpj_match.group()))
-                
-                # Process CNPJ and enrich description
-                if cnpj and cnpj not in AF_COMPANIES:
-                    try:
-                        company_info = get_company_info(cnpj)
-                        if company_info:
-                            razao_social = company_info.get('razao_social', '')
-                            description = description.replace(
-                                cnpj_match.group(), 
-                                f"{razao_social} (CNPJ: {cnpj})"
-                            )
-                    except Exception as e:
-                        print(f"Error looking up CNPJ {cnpj}: {str(e)}")
-                
-                # Map transaction type
+                # Get transaction type
                 transaction_type = detect_transaction_type(description, value)
-                mapped_type = TYPE_MAPPING.get(transaction_type, transaction_type)
                 
                 # Insert transaction
                 cursor.execute('''
@@ -371,9 +356,9 @@ def process_file_with_progress(filepath, process_id):
                     date.strftime('%Y-%m-%d'),
                     description,
                     value,
-                    mapped_type,
+                    transaction_type,
                     'receita' if value > 0 else 'despesa',
-                    cnpj
+                    None
                 ))
                 
                 upload_progress[process_id]['current'] = index + 1
