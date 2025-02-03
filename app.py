@@ -293,49 +293,89 @@ def extract_transaction_info(description, value):
 
 def process_file_with_progress(filepath, process_id):
     try:
+        print(f"Iniciando processamento do arquivo: {filepath}")
+        
+        # First read without header to find correct structure
+        df_init = pd.read_excel(filepath, header=None)
+        header_row = None
+        data_start = None
+        
+        # Find header row and data start position
+        for idx, row in df_init.iterrows():
+            row_values = [str(x).strip() for x in row if pd.notna(x)]
+            
+            # Skip empty rows
+            if not row_values:
+                continue
+                
+            # Check if this is the header row (contains 'Data' and 'Histórico')
+            if 'Data' in row_values and 'Histórico' in row_values:
+                header_row = idx
+                data_start = idx + 1
+                break
+        
+        if header_row is None:
+            raise Exception("Header 'Data' não encontrado")
+        
+        # Re-read file with correct header and data
+        df = pd.read_excel(filepath, skiprows=header_row)
+        
+        # Clean up column names
+        df.columns = [str(col).strip() for col in df.columns]
+        
+        print(f"Arquivo lido com sucesso. Total de linhas: {len(df)}")
+        print(f"Colunas encontradas: {df.columns.tolist()}")
+        
+        total_rows = len(df)
+        upload_progress[process_id] = {
+            'total': total_rows,
+            'current': 0,
+            'status': 'processing',
+            'message': 'Lendo arquivo...'
+        }
+        
+        # Find required columns
+        data_col = find_matching_column(df, ['Data'])
+        desc_col = find_matching_column(df, ['Histórico'])
+        valor_col = find_matching_column(df, ['Valor (R$)', 'Valor'])
+        
+        if not all([data_col, desc_col, valor_col]):
+            raise Exception(f"Colunas necessárias não encontradas. Colunas disponíveis: {df.columns.tolist()}")
+        
+        # Filter rows
+        df = df[pd.notna(df[data_col])]
+        df = df[~df[data_col].astype(str).str.contains('0715')]
+        
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Read Excel looking for header row
-        df = pd.read_excel(filepath, header=None)
-        
-        # Find the header row by looking for specific keywords
-        header_row = None
-        for idx, row in df.iterrows():
-            if any(str(cell).upper() in ['DATA', 'DESCRIÇÃO', 'VALOR'] for cell in row):
-                header_row = idx
-                break
-                
-        if header_row is None:
-            raise ValueError("Could not find header row in file")
-            
-        # Read data with proper header
-        df = pd.read_excel(filepath, skiprows=header_row+1)
-        total_rows = len(df)
-        
-        upload_progress[process_id].update({
-            'total': total_rows,
-            'message': 'Processing file...'
-        })
-        
-        # Process each row
+        processed_rows = 0
         for index, row in df.iterrows():
+            upload_progress[process_id].update({
+                'current': index + 1,
+                'message': f'Processando linha {index + 1} de {total_rows}'
+            })
+            
             try:
-                # Parse date
-                date_val = row.iloc[0]
-                if isinstance(date_val, str):
-                    try:
-                        date = pd.to_datetime(date_val, format='%d/%m/%Y').date()
-                    except:
-                        date = pd.to_datetime(date_val, dayfirst=True).date()
-                else:
-                    date = pd.to_datetime(date_val).date()
+                # Process date
+                date = process_date(row[data_col])
+                if date is None:
+                    continue
                 
-                description = str(row.iloc[1]).strip()
-                value = float(str(row.iloc[2]).replace('R$', '').strip().replace('.', '').replace(',', '.'))
+                # Process description and value
+                description = str(row[desc_col]).strip()
+                if not description:
+                    continue
+                    
+                value = process_value(row[valor_col])
+                if value is None:
+                    continue
                 
-                # Get transaction type
+                # Detect transaction type
                 transaction_type = detect_transaction_type(description, value)
+                
+                # Process CNPJ
+                cnpj = extract_cnpj(description)
                 
                 # Insert transaction
                 cursor.execute('''
@@ -347,30 +387,32 @@ def process_file_with_progress(filepath, process_id):
                     value,
                     transaction_type,
                     'receita' if value > 0 else 'despesa',
-                    None
+                    cnpj
                 ))
                 
-                upload_progress[process_id]['current'] = index + 1
+                processed_rows += 1
                 
             except Exception as e:
                 print(f"Error processing row {index}: {str(e)}")
                 continue
-                
+        
         conn.commit()
         conn.close()
+        
         os.remove(filepath)
         
         upload_progress[process_id].update({
             'status': 'completed',
-            'message': 'File processed successfully'
+            'message': f'Processamento concluído! {processed_rows} transações importadas.'
         })
         
     except Exception as e:
+        print(f"General processing error: {str(e)}")
         upload_progress[process_id].update({
             'status': 'error',
             'message': f'Error: {str(e)}'
         })
-        
+
 def detect_transaction_type(description, value):
     description_upper = description.upper()
     
