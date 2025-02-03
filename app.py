@@ -530,30 +530,34 @@ def cleanup_paired_transactions(conn):
         print("\n=== Starting CONTAMAX Cleanup ===")
         # First find CONTAMAX pairs
         cursor.execute('''
-        SELECT t1.*, t2.*
-        FROM transactions t1
-        JOIN transactions t2 ON t1.date = t2.date 
-        AND ABS(t1.value) = ABS(t2.value)
-        AND t1.id != t2.id
-        WHERE 
-            ((t1.description LIKE '%RESGATE CONTAMAX%' AND t2.description LIKE '%CANCELAMENTO RESGATE%')
-            OR (t2.description LIKE '%RESGATE CONTAMAX%' AND t1.description LIKE '%CANCELAMENTO RESGATE%'))
-            AND t1.value = -t2.value
-        ''')
+        WITH contamax_pairs AS (
+            SELECT t1.id as id1, t1.description as desc1, t1.value as val1,
+                   t2.id as id2, t2.description as desc2, t2.value as val2
+            FROM transactions t1
+            JOIN transactions t2 ON t1.date = t2.date 
+            AND ABS(t1.value) = ABS(t2.value)
+            AND t1.id != t2.id
+            WHERE 
+                ((t1.description LIKE '%RESGATE CONTAMAX%' AND t2.description LIKE '%CANCELAMENTO RESGATE%')
+                OR (t2.description LIKE '%RESGATE CONTAMAX%' AND t1.description LIKE '%CANCELAMENTO RESGATE%'))
+                AND t1.value = -t2.value
+        )
+        SELECT * FROM contamax_pairs''')
         
         contamax_pairs = cursor.fetchall()
         print(f"Found {len(contamax_pairs)} CONTAMAX pairs to delete:")
         for pair in contamax_pairs:
-            print(f"CONTAMAX Pair:\n  1. {pair[2]} (R$ {pair[3]:.2f})\n  2. {pair[8]} (R$ {pair[9]:.2f})")
-        
-        if contamax_pairs:
-            # Delete CONTAMAX pairs
-            ids_to_delete = []
-            for pair in contamax_pairs:
-                ids_to_delete.extend([pair[0], pair[6]])  # Add both IDs from the pair
+            print("CONTAMAX Pair:")
+            print(f"  1. {pair[1]} (R$ {pair[2]})")
+            print(f"  2. {pair[4]} (R$ {pair[5]})")
             
-            placeholders = ','.join('?' * len(ids_to_delete))
-            cursor.execute(f'DELETE FROM transactions WHERE id IN ({placeholders})', ids_to_delete)
+        if contamax_pairs:
+            contamax_ids = []
+            for pair in contamax_pairs:
+                contamax_ids.extend([pair[0], pair[3]])
+            
+            placeholders = ','.join(['?' for _ in contamax_ids])
+            cursor.execute(f'DELETE FROM transactions WHERE id IN ({placeholders})', contamax_ids)
             contamax_deleted = cursor.rowcount
             total_deleted += contamax_deleted
             print(f"Deleted {contamax_deleted} CONTAMAX transactions")
@@ -561,30 +565,34 @@ def cleanup_paired_transactions(conn):
         print("\n=== Starting CHEQUE Cleanup ===")
         # Then find CHEQUE pairs
         cursor.execute('''
-        SELECT t1.*, t2.*
-        FROM transactions t1
-        JOIN transactions t2 ON t1.date = t2.date 
-        AND ABS(t1.value) = ABS(t2.value)
-        AND t1.id != t2.id
-        WHERE 
-            ((t1.description LIKE '%CHEQUE EMITIDO/DEBITADO%' OR t1.description LIKE '%COMPENSACAO INTERNA%')
-            AND t2.description LIKE '%CHEQUE DEVOLVIDO%'
-            AND t1.value < 0 AND t2.value > 0)
-        ''')
+        WITH cheque_pairs AS (
+            SELECT t1.id as id1, t1.description as desc1, t1.value as val1,
+                   t2.id as id2, t2.description as desc2, t2.value as val2
+            FROM transactions t1
+            JOIN transactions t2 ON t1.date = t2.date 
+            AND ABS(t1.value) = ABS(t2.value)
+            AND t1.id != t2.id
+            WHERE 
+                ((t1.description LIKE '%CHEQUE EMITIDO/DEBITADO%' OR t1.description LIKE '%COMPENSACAO INTERNA%')
+                AND t2.description LIKE '%CHEQUE DEVOLVIDO%'
+                AND t1.value < 0 AND t2.value > 0)
+        )
+        SELECT * FROM cheque_pairs''')
         
         cheque_pairs = cursor.fetchall()
         print(f"Found {len(cheque_pairs)} CHEQUE pairs to delete:")
         for pair in cheque_pairs:
-            print(f"CHEQUE Pair:\n  1. {pair[2]} (R$ {pair[3]:.2f})\n  2. {pair[8]} (R$ {pair[9]:.2f})")
-        
-        if cheque_pairs:
-            # Delete CHEQUE pairs
-            ids_to_delete = []
-            for pair in cheque_pairs:
-                ids_to_delete.extend([pair[0], pair[6]])  # Add both IDs from the pair
+            print("CHEQUE Pair:")
+            print(f"  1. {pair[1]} (R$ {pair[2]})")
+            print(f"  2. {pair[4]} (R$ {pair[5]})")
             
-            placeholders = ','.join('?' * len(ids_to_delete))
-            cursor.execute(f'DELETE FROM transactions WHERE id IN ({placeholders})', ids_to_delete)
+        if cheque_pairs:
+            cheque_ids = []
+            for pair in cheque_pairs:
+                cheque_ids.extend([pair[0], pair[3]])
+            
+            placeholders = ','.join(['?' for _ in cheque_ids])
+            cursor.execute(f'DELETE FROM transactions WHERE id IN ({placeholders})', cheque_ids)
             cheque_deleted = cursor.rowcount
             total_deleted += cheque_deleted
             print(f"Deleted {cheque_deleted} CHEQUE transactions")
