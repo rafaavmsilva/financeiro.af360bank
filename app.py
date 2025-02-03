@@ -308,7 +308,7 @@ def process_file_with_progress(filepath, process_id):
             try:
                 # Initialize variables
                 cnpj = None
-                date = pd.to_datetime(row[data_col]).date()
+                date = pd.to_datetime(date_str, format='%d/%m/%Y').date()
                 description = str(row[desc_col]).strip()
                 value = float(str(row[valor_col]).replace('R$', '').strip().replace('.', '').replace(',', '.'))
                 
@@ -603,7 +603,7 @@ def enviados():
         'tarifa': 0.0,
         'iof': 0.0,
         'multa': 0.0,
-        'debito': 0.1
+        'debito': 0.0
     }
 
     # Get filters
