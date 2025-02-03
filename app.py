@@ -337,7 +337,7 @@ def process_file_with_progress(filepath, process_id):
                 try:
                     if isinstance(data, str):
                         try:
-                            date = pd.to_datetime(data).date()
+                            date = pd.to_datetime(data, format='%d/%m/%Y', dayfirst=True).date()
                         except ValueError:
                             try:
                                 date = datetime.strptime(data, '%Y-%m-%d').date()
