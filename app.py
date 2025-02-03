@@ -349,7 +349,7 @@ def process_file_with_progress(filepath, process_id):
                         date = data.date()
                     else:
                         try:
-                            date = pd.to_datetime(data).date()
+                            date = pd.to_datetime(data, format='%d/%m/%Y', dayfirst=True).date()
                         except:
                             print(f"Erro ao processar linha {index + 1}: 'Data'")
                             print(f"Dados da linha: {row.to_dict()}")
