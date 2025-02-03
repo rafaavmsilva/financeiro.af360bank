@@ -402,42 +402,7 @@ def process_file_with_progress(filepath, process_id):
         processed_rows = 0
         for index, row in df.iterrows():
             try:
-                # Process date and basic info
-                date = process_date(row[data_col])
-                if date is None:
-                    continue
-                
-                description = str(row[desc_col]).strip()
-                if not description:
-                    continue
-                    
-                value = process_value(row[valor_col])
-                if value is None:
-                    continue
-                
-                # First detect transaction type
-                transaction_type = detect_transaction_type(description, value)
-                
-                # Extract CNPJ for any transaction type containing a CNPJ number
-                cnpj = extract_cnpj(description)
-                enriched_description = description
-                
-                # Enrich description if CNPJ is found, regardless of transaction type
-                if cnpj:
-                    enriched_description = extract_and_enrich_cnpj(description, transaction_type)
-                
-                # Insert transaction
-                cursor.execute('''
-                    INSERT INTO transactions (date, description, value, type, transaction_type, document)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                ''', (
-                    date.strftime('%Y-%m-%d'),
-                    enriched_description,
-                    value,
-                    transaction_type,
-                    'receita' if value > 0 else 'despesa',
-                    cnpj
-                ))
+                # ...existing transaction processing...
                 
                 processed_rows += 1
                 
@@ -445,14 +410,18 @@ def process_file_with_progress(filepath, process_id):
                 print(f"Error processing row {index}: {str(e)}")
                 continue
         
-        # Cleanup
+        # Cleanup paired transactions automatically
+        deleted_count = cleanup_paired_transactions(conn)
+        if deleted_count > 0:
+            print(f"Cleaned up {deleted_count} paired transactions")
+        
         conn.commit()
         conn.close()
         os.remove(filepath)
         
         upload_progress[process_id].update({
             'status': 'completed',
-            'message': f'Processamento concluído! {processed_rows} transações importadas.'
+            'message': f'Processamento concluído! {processed_rows} transações importadas, {deleted_count} transações duplicadas removidas.'
         })
         
     except Exception as e:
@@ -533,57 +502,35 @@ def create_companies_table():
     conn.commit()
     conn.close()
 
-def cleanup_paired_transactions():
-    """Clean up paired transactions that cancel each other"""
-    conn = get_db_connection()
+def cleanup_paired_transactions(conn):
+    """Clean up paired transactions during upload"""
     cursor = conn.cursor()
     
     try:
-        # Find and delete paired CHEQUE transactions
+        # Find and delete paired transactions
         cursor.execute('''
-        WITH paired_cheques AS (
+        WITH paired_transactions AS (
             SELECT t1.id as id1, t2.id as id2
             FROM transactions t1
             JOIN transactions t2 ON ABS(t1.value) = ABS(t2.value)
             WHERE t1.id < t2.id
             AND (
-                (t1.description LIKE '%CHEQUE EMITIDO/DEBITADO%' AND t2.description LIKE '%CHEQUE DEVOLVIDO%')
-                OR (t1.description LIKE '%COMPENSACAO INTERNA DE CHEQUE%' AND t2.description LIKE '%CHEQUE DEVOLVIDO%')
+                t2.description LIKE '%CHEQUE DEVOLVIDO%'
+                OR t2.description LIKE '%CANCELAMENTO RESGATE%'
             )
             AND t1.value = -t2.value
         )
         DELETE FROM transactions
-        WHERE id IN (SELECT id1 FROM paired_cheques)
-        OR id IN (SELECT id2 FROM paired_cheques)
-        ''')
-
-        # Find and delete paired CONTAMAX transactions
-        cursor.execute('''
-        WITH paired_contamax AS (
-            SELECT t1.id as id1, t2.id as id2
-            FROM transactions t1
-            JOIN transactions t2 ON ABS(t1.value) = ABS(t2.value)
-            WHERE t1.id < t2.id
-            AND (
-                (t1.description LIKE '%RESGATE CONTAMAX%' AND t2.description LIKE '%CANCELAMENTO RESGATE CONTAMAX%')
-                OR (t1.description LIKE '%APLICACAO CONTAMAX%' AND t2.description LIKE '%RESGATE CONTAMAX%')
-            )
-            AND t1.value = -t2.value
-        )
-        DELETE FROM transactions
-        WHERE id IN (SELECT id1 FROM paired_contamax)
-        OR id IN (SELECT id2 FROM paired_contamax)
+        WHERE id IN (SELECT id1 FROM paired_transactions)
+        OR id IN (SELECT id2 FROM paired_transactions)
         ''')
 
         conn.commit()
-        deleted_count = cursor.rowcount
-        return deleted_count
+        return cursor.rowcount
         
     except Exception as e:
-        conn.rollback()
-        raise e
-    finally:
-        conn.close()
+        print(f"Error cleaning up transactions: {str(e)}")
+        return 0
 
 @app.route('/cleanup-transactions', methods=['POST'])
 @login_required
