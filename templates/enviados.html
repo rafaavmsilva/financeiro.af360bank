@@ -96,6 +96,13 @@
                 </div>
             </div>
         </div>
+        <div class="row mt-3 mb-3">
+            <div class="col-12 text-end">
+                <button onclick="cleanupTransactions()" class="btn btn-warning">
+                    <i class="fas fa-broom"></i> Limpar Transações Duplicadas
+                </button>
+            </div>
+        </div>
     </div>
 
     <!-- Transactions Table -->
@@ -169,6 +176,30 @@ function filterByDate() {
     if (startDate) currentUrl.searchParams.set('start_date', startDate);
     if (endDate) currentUrl.searchParams.set('end_date', endDate);
     window.location.href = currentUrl.toString();
+}
+
+function cleanupTransactions() {
+    if (confirm('Isso irá remover transações duplicadas que se cancelam (ex: cheques devolvidos e resgate contamax cancelado). Continuar?')) {
+        fetch('/cleanup-transactions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(data.message);
+                location.reload();
+            } else {
+                alert('Erro: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Erro ao limpar transações');
+        });
+    }
 }
 </script>
 {% endblock %}
