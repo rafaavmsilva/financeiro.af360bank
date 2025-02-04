@@ -976,34 +976,37 @@ def dashboard():
     
     conn = get_db_connection()
     cursor = conn.cursor()
-
-    # Exclude internal transactions and calculate totals
-    cursor.execute('''
-        WITH filtered_transactions AS (
-            SELECT *
-            FROM transactions t
-            WHERE NOT EXISTS (
-                SELECT 1 
-                FROM (
-                    SELECT value, document
-                    FROM transactions 
-                    WHERE document IN (''' + ','.join(['?' for _ in AF_COMPANIES]) + ''')
-                ) af
-                WHERE t.document = af.document
-            )
+    
+    # Base exclusion clause
+    base_exclusion = '''
+        AND (
+            t.document NOT IN ('50389827000107','43077430000114','53720093000195','55072511000100','17814862000150')
+            OR t.document IS NULL
         )
+        AND t.description NOT LIKE '%AF ENERGY SOLAR 360%'
+        AND t.description NOT LIKE '%AF 360 CORRETORA DE SEGUROS%'
+        AND t.description NOT LIKE '%AF CREDITO BANK%'
+        AND t.description NOT LIKE '%AF COMERCIO DE CALCADOS%'
+        AND t.description NOT LIKE '%AF 360 FRANQUIAS%'
+        AND t.description NOT LIKE '%AF 360 CORRETORA%'
+    '''
+
+    # Main totals query
+    cursor.execute(f'''
         SELECT 
-            (SELECT COALESCE(SUM(value), 0) FROM filtered_transactions WHERE value > 0) as total_received,
-            (SELECT COALESCE(SUM(ABS(value)), 0) FROM filtered_transactions WHERE value < 0) as total_sent,
-            (SELECT COALESCE(SUM(ABS(value)), 0) FROM filtered_transactions WHERE type = 'JUROS') as juros,
-            (SELECT COALESCE(SUM(ABS(value)), 0) FROM filtered_transactions WHERE type = 'IOF') as iof,
-            (SELECT COALESCE(SUM(ABS(value)), 0) FROM filtered_transactions WHERE type IN ('TARIFA', 'TAR', 'TAXA')) as tarifa,
-            (SELECT COALESCE(SUM(ABS(value)), 0) FROM filtered_transactions WHERE type = 'MULTA') as multa,
-            (SELECT COALESCE(SUM(value), 0) FROM filtered_transactions WHERE type = 'PIX RECEBIDO') as pix_recebido,
-            (SELECT COALESCE(SUM(value), 0) FROM filtered_transactions WHERE type = 'TED RECEBIDA') as ted_recebida,
-            (SELECT COALESCE(SUM(ABS(value)), 0) FROM filtered_transactions WHERE type = 'PIX ENVIADO') as pix_enviado,
-            (SELECT COALESCE(SUM(ABS(value)), 0) FROM filtered_transactions WHERE type = 'TED ENVIADA') as ted_enviada
-        ''', list(AF_COMPANIES.keys()))
+            COALESCE(SUM(CASE WHEN value > 0 THEN value ELSE 0 END), 0) as total_received,
+            COALESCE(SUM(CASE WHEN value < 0 THEN ABS(value) ELSE 0 END), 0) as total_sent,
+            COALESCE(SUM(CASE WHEN type = 'JUROS' THEN ABS(value) ELSE 0 END), 0) as juros,
+            COALESCE(SUM(CASE WHEN type = 'IOF' THEN ABS(value) ELSE 0 END), 0) as iof,
+            COALESCE(SUM(CASE WHEN type IN ('TARIFA', 'TAR', 'TAXA') THEN ABS(value) ELSE 0 END), 0) as tarifa,
+            COALESCE(SUM(CASE WHEN type = 'MULTA' THEN ABS(value) ELSE 0 END), 0) as multa,
+            COALESCE(SUM(CASE WHEN type = 'PIX RECEBIDO' THEN value ELSE 0 END), 0) as pix_recebido,
+            COALESCE(SUM(CASE WHEN type = 'TED RECEBIDA' THEN value ELSE 0 END), 0) as ted_recebida,
+            COALESCE(SUM(CASE WHEN type = 'PIX ENVIADO' THEN ABS(value) ELSE 0 END), 0) as pix_enviado,
+            COALESCE(SUM(CASE WHEN type = 'TED ENVIADA' THEN ABS(value) ELSE 0 END), 0) as ted_enviada
+        FROM transactions t
+        WHERE 1=1 {base_exclusion}
+    ''')
     
     row = cursor.fetchone()
     totals = {
@@ -1019,68 +1022,66 @@ def dashboard():
         'ted_enviada': float(row[9] or 0)
     }
 
-    # Get monthly data excluding internal transactions
-    cursor.execute('''
+    # Monthly data query
+    cursor.execute(f'''
         SELECT 
             strftime('%m/%Y', date) as month,
             COALESCE(SUM(CASE WHEN value > 0 THEN value ELSE 0 END), 0) as received,
             COALESCE(SUM(CASE WHEN value < 0 THEN ABS(value) ELSE 0 END), 0) as sent
-        FROM transactions
-        WHERE document NOT IN (''' + ','.join(['?' for _ in AF_COMPANIES]) + ''')
+        FROM transactions t
+        WHERE 1=1 {base_exclusion}
         GROUP BY month
-        ORDER BY date ASC
+        ORDER BY date DESC
         LIMIT 6
-    ''', list(AF_COMPANIES.keys()))
+    ''')
     
+    monthly_data = cursor.fetchall()
     months = []
     received = []
     sent = []
-    for row in cursor.fetchall():
-        months.append(row[0])
-        received.append(float(row[1]))
-        sent.append(float(row[2]))
+    for row in monthly_data:
+        months.insert(0, row[0])
+        received.insert(0, float(row[1]))
+        sent.insert(0, float(row[2]))
 
-    # Get expenses distribution excluding internal transactions
-    cursor.execute('''
+    # Expenses distribution query
+    cursor.execute(f'''
         SELECT 
             CASE
                 WHEN type IN ('TAXA', 'TARIFA', 'IOF', 'MULTA', 'DEBITO') THEN 'DESPESAS OPERACIONAIS'
                 WHEN type IN ('APLICACAO', 'RESGATE') THEN 'CONTAMAX'
                 WHEN type IN ('COMPENSACAO', 'CHEQUE') THEN 'CHEQUE'
-                ELSE type
-            END as type,
+                WHEN type = 'PIX ENVIADO' THEN 'PIX'
+                WHEN type = 'TED ENVIADA' THEN 'TED'
+                WHEN type = 'PAGAMENTO' THEN 'PAGAMENTO'
+                ELSE 'DIVERSOS'
+            END as category,
             COALESCE(SUM(ABS(value)), 0) as total
-        FROM transactions
-        WHERE value < 0 
-        AND document NOT IN (''' + ','.join(['?' for _ in AF_COMPANIES]) + ''')
-        GROUP BY 
-            CASE
-                WHEN type IN ('TAXA', 'TARIFA', 'IOF', 'MULTA', 'DEBITO') THEN 'DESPESAS OPERACIONAIS'
-                WHEN type IN ('APLICACAO', 'RESGATE') THEN 'CONTAMAX'
-                WHEN type IN ('COMPENSACAO', 'CHEQUE') THEN 'CHEQUE'
-                ELSE type
-            END
+        FROM transactions t
+        WHERE value < 0 {base_exclusion}
+        GROUP BY category
         ORDER BY total DESC
-    ''', list(AF_COMPANIES.keys()))
+    ''')
     
+    expense_data = cursor.fetchall()
     expense_types = []
     expense_values = []
-    for row in cursor.fetchall():
-        expense_types.append(row[0])
-        expense_values.append(float(row[1]))
+    for row in expense_data:
+        if float(row[1]) > 0:
+            expense_types.append(row[0])
+            expense_values.append(float(row[1]))
 
-    # Get top CNPJs excluding AF companies
-    cursor.execute('''
+    # Top CNPJs query
+    cursor.execute(f'''
         SELECT 
             document,
             COALESCE(SUM(ABS(value)), 0) as total
-        FROM transactions
-        WHERE document IS NOT NULL
-        AND document NOT IN (''' + ','.join(['?' for _ in AF_COMPANIES]) + ''')
+        FROM transactions t
+        WHERE document IS NOT NULL {base_exclusion}
         GROUP BY document
         ORDER BY total DESC
         LIMIT 5
-    ''', list(AF_COMPANIES.keys()))
+    ''')
     
     top_cnpjs = []
     for row in cursor.fetchall():
@@ -1094,7 +1095,7 @@ def dashboard():
             })
 
     conn.close()
-
+    
     return render_template('dashboard.html',
                          active_page='dashboard',
                          totals=totals,
