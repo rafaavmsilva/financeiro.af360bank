@@ -1025,14 +1025,14 @@ def dashboard():
     # Monthly data query
     cursor.execute(f'''
         SELECT 
-            strftime('%m/%Y', date) as month,
+            date || ' - ' || date(date, '+10 days') as period,
             COALESCE(SUM(CASE WHEN value > 0 THEN value ELSE 0 END), 0) as received,
             COALESCE(SUM(CASE WHEN value < 0 THEN ABS(value) ELSE 0 END), 0) as sent
         FROM transactions t
         WHERE 1=1 {base_exclusion}
-        GROUP BY month
+        GROUP BY (julianday(date) - julianday('2024-01-01')) / 10
         ORDER BY date DESC
-        LIMIT 6
+        LIMIT 12
     ''')
     
     monthly_data = cursor.fetchall()
@@ -1056,7 +1056,14 @@ def dashboard():
                 WHEN type = 'PAGAMENTO' THEN 'PAGAMENTO'
                 ELSE 'DIVERSOS'
             END as category,
-            COALESCE(SUM(ABS(value)), 0) as total
+            COALESCE(SUM(CASE 
+                WHEN type IN ('TAXA', 'TARIFA', 'IOF', 'MULTA', 'DEBITO') THEN ABS(value)
+                ELSE 0 
+            END), 0) as operacional_value,
+            COALESCE(SUM(CASE 
+                WHEN type NOT IN ('TAXA', 'TARIFA', 'IOF', 'MULTA', 'DEBITO') THEN ABS(value)
+                ELSE 0 
+            END), 0) as other_value
         FROM transactions t
         WHERE value < 0 {base_exclusion}
         GROUP BY category

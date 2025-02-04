@@ -161,6 +161,12 @@ new Chart(document.getElementById('cashFlowChart'), {
             }
         },
         scales: {
+            x: {
+                ticks: {
+                    maxRotation: 45,
+                    minRotation: 45
+                }
+            },
             y: {
                 beginAtZero: true,
                 ticks: {
