@@ -625,23 +625,6 @@ def recebidos():
     start_date = request.args.get('start_date', '')
     end_date = request.args.get('end_date', '')
 
-    # Initialize all possible totals
-    totals = {
-        'pix_recebido': 0.0,
-        'ted_recebida': 0.0,
-        'pagamento': 0.0,
-        'cheque': 0.0,
-        'contamax': 0.0,
-        'juros': 0.0,
-        'despesas_operacionais': 0.0,
-        'diversos': 0.0,
-        'taxa': 0.0,
-        'tarifa': 0.0,
-        'iof': 0.0,
-        'multa': 0.0,
-        'debito': 0.0
-    }
-
     # Base query
     query = '''
         SELECT t.id, t.date, t.description, t.value,
@@ -667,6 +650,23 @@ def recebidos():
         AND t.description NOT LIKE '%AF 360 FRANQUIAS%'
         AND t.description NOT LIKE '%AF 360 CORRETORA%'
     '''
+
+    # Initialize all possible totals
+    totals = {
+        'pix_recebido': 0.0,
+        'ted_recebida': 0.0,
+        'pagamento': 0.0,
+        'cheque': 0.0,
+        'contamax': 0.0,
+        'juros': 0.0,
+        'despesas_operacionais': 0.0,
+        'diversos': 0.0,
+        'taxa': 0.0,
+        'tarifa': 0.0,
+        'iof': 0.0,
+        'multa': 0.0,
+        'debito': 0.0
+    }
 
     # Build query with filters
     params = []
@@ -779,22 +779,6 @@ def enviados():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Initialize totals
-    totals = {
-        'pix_enviado': 0.0,
-        'ted_enviada': 0.0,
-        'pagamento': 0.0,
-        'cheque': 0.0,
-        'contamax': 0.0,
-        'despesas_operacionais': 0.0,
-        'diversos': 0.0,
-        'taxa': 0.0,
-        'tarifa': 0.0,
-        'iof': 0.0,
-        'multa': 0.0,
-        'debito': 0.0
-    }
-
     # Get filters
     tipo_filtro = request.args.get('tipo', 'todos')
     cnpj_filtro = request.args.get('cnpj', 'todos')
@@ -826,6 +810,22 @@ def enviados():
         AND t.description NOT LIKE '%AF 360 FRANQUIAS%'
         AND t.description NOT LIKE '%AF 360 CORRETORA%'
     '''
+
+    # Initialize totals
+    totals = {
+        'pix_enviado': 0.0,
+        'ted_enviada': 0.0,
+        'pagamento': 0.0,
+        'cheque': 0.0,
+        'contamax': 0.0,
+        'despesas_operacionais': 0.0,
+        'diversos': 0.0,
+        'taxa': 0.0,
+        'tarifa': 0.0,
+        'iof': 0.0,
+        'multa': 0.0,
+        'debito': 0.0
+    }
 
     # Build filters
     params = []
@@ -923,16 +923,6 @@ def transacoes_internas():
     start_date = request.args.get('start_date', '')
     end_date = request.args.get('end_date', '')
 
-    # Initialize totals
-    totals = {
-        'juros': 0.0,
-        'iof': 0.0,
-        'pix_enviado': 0.0,
-        'ted_enviada': 0.0,
-        'pagamento': 0.0,
-        'diversos': 0.0
-    }
-
     # Initialize transactions list
     transactions = []
 
@@ -956,6 +946,16 @@ def transacoes_internas():
             for _ in AF_COMPANIES.values()
         ])
     )
+    
+    # Initialize totals
+    totals = {
+        'juros': 0.0,
+        'iof': 0.0,
+        'pix_enviado': 0.0,
+        'ted_enviada': 0.0,
+        'pagamento': 0.0,
+        'diversos': 0.0
+    }
     
     # Add parameters
     params = list(AF_COMPANIES.keys())
