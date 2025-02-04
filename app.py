@@ -656,7 +656,10 @@ def recebidos():
             t.document
         FROM transactions t
         WHERE t.value > 0
-        AND t.document NOT IN ('50389827000107','43077430000114','53720093000195','55072511000100','17814862000150')
+        AND (
+            t.document NOT IN ('50389827000107','43077430000114','53720093000195','55072511000100','17814862000150')
+            OR t.document IS NULL
+        )
         AND t.description NOT LIKE '%AF ENERGY SOLAR 360%'
         AND t.description NOT LIKE '%AF 360 CORRETORA DE SEGUROS%'
         AND t.description NOT LIKE '%AF CREDITO BANK%'
@@ -811,7 +814,10 @@ def enviados():
             t.document
         FROM transactions t
         WHERE t.value < 0
-        AND t.document NOT IN ('50389827000107','43077430000114','53720093000195','55072511000100','17814862000150')
+        AND (
+            t.document NOT IN ('50389827000107','43077430000114','53720093000195','55072511000100','17814862000150')
+            OR t.document IS NULL
+        )
         AND t.description NOT LIKE '%AF ENERGY SOLAR 360%'
         AND t.description NOT LIKE '%AF 360 CORRETORA DE SEGUROS%'
         AND t.description NOT LIKE '%AF CREDITO BANK%'
