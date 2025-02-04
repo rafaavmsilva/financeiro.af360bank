@@ -941,12 +941,11 @@ def transacoes_internas():
         WHERE (
             t1.document IN ({af_companies})
             OR {conditions}
-            OR t1.description LIKE '%AF%'
-        )
-        AND (
-            t1.type LIKE '%PIX%'
-            OR t1.type LIKE '%TED%'
-            OR t1.type = 'PAGAMENTO'
+            OR t1.description LIKE '%AF 360%'
+            OR t1.description LIKE '%AF ENERGY%'
+            OR t1.description LIKE '%AF CREDITO%'
+            OR t1.description LIKE '%AF COMERCIO%'
+            OR t1.description LIKE '%AF 360 CORRETORA%'
         )
     '''.format(
         af_companies=','.join(['?' for _ in AF_COMPANIES]),
