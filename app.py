@@ -665,6 +665,7 @@ def recebidos():
         AND t.description NOT LIKE '%AF CREDITO BANK%'
         AND t.description NOT LIKE '%AF COMERCIO DE CALCADOS%'
         AND t.description NOT LIKE '%AF 360 FRANQUIAS%'
+        AND t.description NOT LIKE '%AF 360 CORRETORA%'
     '''
 
     # Build query with filters
@@ -823,6 +824,7 @@ def enviados():
         AND t.description NOT LIKE '%AF CREDITO BANK%'
         AND t.description NOT LIKE '%AF COMERCIO DE CALCADOS%'
         AND t.description NOT LIKE '%AF 360 FRANQUIAS%'
+        AND t.description NOT LIKE '%AF 360 CORRETORA%'
     '''
 
     # Build filters
