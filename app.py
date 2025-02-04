@@ -1056,18 +1056,19 @@ def dashboard():
                 WHEN type = 'PAGAMENTO' THEN 'PAGAMENTO'
                 ELSE 'DIVERSOS'
             END as category,
-            COALESCE(SUM(CASE 
-                WHEN type IN ('TAXA', 'TARIFA', 'IOF', 'MULTA', 'DEBITO') THEN ABS(value)
-                ELSE 0 
-            END), 0) as operacional_value,
-            COALESCE(SUM(CASE 
-                WHEN type NOT IN ('TAXA', 'TARIFA', 'IOF', 'MULTA', 'DEBITO') THEN ABS(value)
-                ELSE 0 
-            END), 0) as other_value
+            COALESCE(SUM(ABS(value)), 0) as total_value
         FROM transactions t
         WHERE value < 0 {base_exclusion}
-        GROUP BY category
-        ORDER BY total DESC
+        GROUP BY CASE
+                WHEN type IN ('TAXA', 'TARIFA', 'IOF', 'MULTA', 'DEBITO') THEN 'DESPESAS OPERACIONAIS'
+                WHEN type IN ('APLICACAO', 'RESGATE') THEN 'CONTAMAX'
+                WHEN type IN ('COMPENSACAO', 'CHEQUE') THEN 'CHEQUE'
+                WHEN type = 'PIX ENVIADO' THEN 'PIX'
+                WHEN type = 'TED ENVIADA' THEN 'TED'
+                WHEN type = 'PAGAMENTO' THEN 'PAGAMENTO'
+                ELSE 'DIVERSOS'
+            END
+        ORDER BY total_value DESC
     ''')
     
     expense_data = cursor.fetchall()
