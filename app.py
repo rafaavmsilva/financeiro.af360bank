@@ -645,17 +645,23 @@ def recebidos():
     # Base query
     query = '''
         SELECT t.id, t.date, t.description, t.value,
-               t.type AS original_type,
-               CASE
-                   WHEN t.type IN ('APLICACAO', 'RESGATE') THEN 'CONTAMAX'
-                   WHEN t.type IN ('COMPENSACAO', 'CHEQUE') THEN 'CHEQUE'
-                   WHEN t.type IN ('TAXA', 'TARIFA', 'IOF', 'MULTA', 'DEBITO') THEN 'DESPESAS OPERACIONAIS'
-                   WHEN t.type IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO') THEN t.type
-                   ELSE 'DIVERSOS'
-               END AS displayed_type,
-               t.document
+            t.type AS original_type,
+            CASE
+                WHEN t.type IN ('APLICACAO', 'RESGATE') THEN 'CONTAMAX'
+                WHEN t.type IN ('COMPENSACAO', 'CHEQUE') THEN 'CHEQUE'
+                WHEN t.type IN ('TAXA', 'TARIFA', 'IOF', 'MULTA', 'DEBITO') THEN 'DESPESAS OPERACIONAIS'
+                WHEN t.type IN ('PIX RECEBIDO', 'TED RECEBIDA', 'PAGAMENTO') THEN t.type
+                ELSE 'DIVERSOS'
+            END AS displayed_type,
+            t.document
         FROM transactions t
         WHERE t.value > 0
+        AND t.document NOT IN ('50389827000107','43077430000114','53720093000195','55072511000100','17814862000150')
+        AND t.description NOT LIKE '%AF ENERGY SOLAR 360%'
+        AND t.description NOT LIKE '%AF 360 CORRETORA DE SEGUROS%'
+        AND t.description NOT LIKE '%AF CREDITO BANK%'
+        AND t.description NOT LIKE '%AF COMERCIO DE CALCADOS%'
+        AND t.description NOT LIKE '%AF 360 FRANQUIAS%'
     '''
 
     # Build query with filters
@@ -794,17 +800,23 @@ def enviados():
     # Base query
     query = '''
         SELECT t.id, t.date, t.description, ABS(t.value) as value,
-               t.type AS original_type,
-               CASE
-                   WHEN t.type IN ('APLICACAO', 'RESGATE') THEN 'CONTAMAX'
-                   WHEN t.type IN ('COMPENSACAO', 'CHEQUE') THEN 'CHEQUE'
-                   WHEN t.type IN ('TAXA', 'TARIFA', 'IOF', 'MULTA', 'DEBITO') THEN 'DESPESAS OPERACIONAIS'
-                   WHEN t.type IN ('PIX ENVIADO', 'TED ENVIADA', 'PAGAMENTO') THEN t.type
-                   ELSE 'DIVERSOS'
-               END AS displayed_type,
-               t.document
+            t.type AS original_type,
+            CASE
+                WHEN t.type IN ('APLICACAO', 'RESGATE') THEN 'CONTAMAX'
+                WHEN t.type IN ('COMPENSACAO', 'CHEQUE') THEN 'CHEQUE'
+                WHEN t.type IN ('TAXA', 'TARIFA', 'IOF', 'MULTA', 'DEBITO') THEN 'DESPESAS OPERACIONAIS'
+                WHEN t.type IN ('PIX ENVIADO', 'TED ENVIADA', 'PAGAMENTO') THEN t.type
+                ELSE 'DIVERSOS'
+            END AS displayed_type,
+            t.document
         FROM transactions t
         WHERE t.value < 0
+        AND t.document NOT IN ('50389827000107','43077430000114','53720093000195','55072511000100','17814862000150')
+        AND t.description NOT LIKE '%AF ENERGY SOLAR 360%'
+        AND t.description NOT LIKE '%AF 360 CORRETORA DE SEGUROS%'
+        AND t.description NOT LIKE '%AF CREDITO BANK%'
+        AND t.description NOT LIKE '%AF COMERCIO DE CALCADOS%'
+        AND t.description NOT LIKE '%AF 360 FRANQUIAS%'
     '''
 
     # Build filters
