@@ -1379,7 +1379,7 @@ def extract_and_enrich_cnpj(description, transaction_type):
                     return f"{prefix} {razao_social} (CNPJ: {cnpj})"
                     
             except Exception as e:
-                print(f"Error looking up CNPJ {cnpj}: {str(e)}")
+                print(f"Erro ao indentificar CNPJ {cnpj}: {str(e)}")
                 failed_cnpjs.add(cnpj)
                 
     return description
