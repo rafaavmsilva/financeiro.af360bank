@@ -163,23 +163,32 @@ def allowed_file(filename):
 
 def get_company_info(cnpj):
     """Fetch company information using cache if available"""
-    # Check if already in cache
+    # Normalize CNPJ
+    cnpj = ''.join(filter(str.isdigit, cnpj))
+    if len(cnpj) == 15 and cnpj.startswith('0'):
+        cnpj = cnpj[1:]
+    
+    # Check cache first
     if cnpj in cnpj_cache:
         return cnpj_cache[cnpj]
     
     try:
-        response = requests.get(f'https://brasilapi.com.br/api/cnpj/v1/{cnpj}')
+        session = requests.Session()
+        retries = Retry(total=3, backoff_factor=0.5)
+        session.mount('https://', HTTPAdapter(max_retries=retries))
+        
+        response = session.get(f'https://brasilapi.com.br/api/cnpj/v1/{cnpj}', timeout=10)
         if response.status_code == 200:
             company_info = response.json()
-            # Store in cache
             cnpj_cache[cnpj] = company_info
             if cnpj in failed_cnpjs:
                 failed_cnpjs.remove(cnpj)
             return company_info
         else:
             failed_cnpjs.add(cnpj)
+            print(f"Failed to fetch CNPJ {cnpj}: Status {response.status_code}")
     except Exception as e:
-        print(f"Error fetching company information: {e}")
+        print(f"Error fetching company information for {cnpj}: {str(e)}")
         failed_cnpjs.add(cnpj)
     return None
 
@@ -1297,6 +1306,9 @@ def cnpj_verification_page():
 def extract_and_enrich_cnpj(description, transaction_type):
     """Extract and enrich CNPJ information in description"""
     import re
+    import requests
+    from requests.adapters import HTTPAdapter
+    from requests.packages.urllib3.util.retry import Retry
     
     # Check if description is already enriched
     if '(CNPJ:' in description:
@@ -1308,6 +1320,11 @@ def extract_and_enrich_cnpj(description, transaction_type):
         r'\b(\d{14,15})\b',
         r'\b(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})\b'
     ]
+    
+    # Setup session with retries
+    session = requests.Session()
+    retries = Retry(total=3, backoff_factor=0.5)
+    session.mount('https://', HTTPAdapter(max_retries=retries))
     
     for pattern in cnpj_patterns:
         match = re.search(pattern, description)
@@ -1322,10 +1339,12 @@ def extract_and_enrich_cnpj(description, transaction_type):
                 if cnpj in cnpj_cache:
                     company_info = cnpj_cache[cnpj]
                 else:
-                    response = requests.get(f'https://brasilapi.com.br/api/cnpj/v1/{cnpj}', timeout=5)
+                    response = session.get(f'https://brasilapi.com.br/api/cnpj/v1/{cnpj}', timeout=10)
                     if response.status_code == 200:
                         company_info = response.json()
                         cnpj_cache[cnpj] = company_info
+                        if cnpj in failed_cnpjs:
+                            failed_cnpjs.remove(cnpj)
                     else:
                         failed_cnpjs.add(cnpj)
                         return description
@@ -1338,12 +1357,10 @@ def extract_and_enrich_cnpj(description, transaction_type):
                         prefix = 'PIX RECEBIDO' if 'PIX RECEBIDO' in description else 'TED RECEBIDA'
                         return f"{prefix} {razao_social} (CNPJ: {cnpj})"
                     elif 'PAGAMENTO' in description:
-                        # Extract base prefix without CNPJ
                         prefix = re.sub(r'\s*CNPJ\s*\d+.*$', '', description)
-                        prefix = re.sub(r'\s+0\s+', ' ', prefix)  # Remove standalone '0'
+                        prefix = re.sub(r'\s+0\s+', ' ', prefix)
                         return f"{prefix} {razao_social} (CNPJ: {cnpj})"
                     
-                    # For other transaction types
                     parts = description.split(cnpj, 1)
                     prefix = parts[0].strip()
                     prefix = re.sub(r'\s*CNPJ\s*$', '', prefix)
